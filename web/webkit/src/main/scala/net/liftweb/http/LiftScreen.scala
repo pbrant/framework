@@ -224,6 +224,8 @@ trait AbstractScreen extends Factory {
       vendAVar(Helpers.nextFuncName)
 
     override def toString = is.toString
+
+    def binding: Box[FieldBinding] = Empty
   }
 
   protected object currentField extends ThreadGlobal[FieldIdentifier]
@@ -271,6 +273,10 @@ trait AbstractScreen extends Factory {
           case OnConfirmScreen => true
         }.headOption
 
+      val newBinding: Box[FieldBinding] = (stuff.collect {
+        case AFieldBinding(i) => i
+      }).headOption
+
       new Field {
         type ValueType = T
 
@@ -298,6 +304,8 @@ trait AbstractScreen extends Factory {
 
         override def uniqueFieldId: Box[String] =
           paramFieldId or Full(_theFieldId.get)
+
+        override def binding = newBinding
 
         private lazy val _theFieldId: NonCleanAnyVar[String] =
           vendAVar(Helpers.nextFuncName)
@@ -345,6 +353,8 @@ trait AbstractScreen extends Factory {
     implicit def promoteToFormParam(a: SHtml.ElemAttr): FilterOrValidate[Nothing] = FormParam(a)
 
     implicit def promoteToFormParam(a: (String, String)): FilterOrValidate[Nothing] = FormParam(a)
+
+    implicit def promoteFieldBinding(binding: FieldBinding): FilterOrValidate[Nothing] = AFieldBinding(binding)
   }
 
   sealed protected trait FilterOrValidate[+T]
@@ -370,6 +380,8 @@ trait AbstractScreen extends Factory {
 
   protected final case class AVal[T](v: T => List[FieldError]) extends FilterOrValidate[T]
 
+  protected final case class AFieldBinding(binding: FieldBinding) extends FilterOrValidate[Nothing]
+
   protected def field[T](underlying: => BaseField {type ValueType = T},
                          stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): Field {type ValueType = T} = {
     val paramFieldId: Box[String] = (stuff.collect {
@@ -382,6 +394,10 @@ trait AbstractScreen extends Factory {
       stuff.collect {
         case OnConfirmScreen => true
       }.headOption
+
+    val newBinding: Box[FieldBinding] = (stuff.collect {
+      case AFieldBinding(i) => i
+    }).headOption
 
     new Field {
       type ValueType = T
@@ -441,6 +457,8 @@ trait AbstractScreen extends Factory {
       override def set(v: T) = underlying.set(setFilter.foldLeft(v)((v, f) => f(v)))
 
       override def uniqueFieldId: Box[String] = paramFieldId or underlying.uniqueFieldId or super.uniqueFieldId
+
+      override def binding = newBinding or super.binding
     }
   }
 
@@ -456,6 +474,10 @@ trait AbstractScreen extends Factory {
                          stuff: FilterOrValidate[T]*)(implicit man: Manifest[T], marker: BoxMarker): Field {type ValueType = T} = {
     val paramFieldId: Box[String] = (stuff.collect {
       case FormFieldId(id) => id
+    }).headOption
+
+    val newBinding: Box[FieldBinding] = (stuff.collect {
+      case AFieldBinding(i) => i
     }).headOption
 
     val confirmInfo = stuff.collect {
@@ -517,6 +539,8 @@ trait AbstractScreen extends Factory {
       override def set(v: T) = underlying.open_!.set(setFilter.foldLeft(v)((v, f) => f(v)))
 
       override def uniqueFieldId: Box[String] = paramFieldId or underlying.flatMap(_.uniqueFieldId) or super.uniqueFieldId
+
+      override def binding = newBinding or super.binding
     }
   }
 
@@ -636,6 +660,10 @@ trait AbstractScreen extends Factory {
                                  otherValue: OtherValueInitializer[OV],
                                  stuff: FilterOrValidate[T]*):
   Field {type ValueType = T; type OtherValueType = OV} = {
+    val newBinding: Box[FieldBinding] = (stuff.collect {
+      case AFieldBinding(i) => i
+    }).headOption
+
     otherValue match {
       case OtherValueInitializerImpl(otherValueInitFunc) => {
         new Field {
@@ -663,6 +691,8 @@ trait AbstractScreen extends Factory {
             case AVal(v) => List(v)
             case _ => Nil
           }.toList
+
+          override def binding = newBinding
 
           override def toForm: Box[NodeSeq] = theToForm(this)
         }
@@ -692,6 +722,8 @@ trait AbstractScreen extends Factory {
             case AVal(v) => List(v)
             case _ => Nil
           }.toList
+
+          override def binding = newBinding
 
           override def toForm: Box[NodeSeq] = theToForm(this)
         }
@@ -870,6 +902,7 @@ trait AbstractScreen extends Factory {
       OtherValueInitializerImpl[Seq[String]](() => choices),
       stuff: _*)
   }
+
 }
 
 
@@ -1205,7 +1238,20 @@ trait ScreenWizardRendered {
 }
 
 
-case class ScreenFieldInfo(field: FieldIdentifier, text: NodeSeq, help: Box[NodeSeq], input: Box[NodeSeq])
+case class ScreenFieldInfo(
+    field: FieldIdentifier,
+    text: NodeSeq,
+    help: Box[NodeSeq],
+    input: Box[NodeSeq],
+    binding: Box[FieldBinding]) {
+  def this(field: FieldIdentifier, text: NodeSeq, help: Box[NodeSeq], input: Box[NodeSeq]) =
+    this(field, text, help, input, Empty)
+ }
+
+object ScreenFieldInfo {
+  def apply(field: FieldIdentifier, text: NodeSeq, help: Box[NodeSeq], input: Box[NodeSeq]) =
+    new ScreenFieldInfo(field, text, help, input)
+}
 
 trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRendered {
   def dispatch = {
@@ -1237,7 +1283,7 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
-  private object PrevSnapshot extends TransientRequestVar[Box[ScreenSnapshot]](Empty) {
+  protected object PrevSnapshot extends TransientRequestVar[Box[ScreenSnapshot]](Empty) {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
@@ -1389,13 +1435,19 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
 
     val url = S.uri
 
+    def fieldBinding(field: BaseField): Box[FieldBinding] =
+      field match {
+        case f: Field => f.binding
+        case _ => None
+      }
+
     renderAll(
       Empty, //currentScreenNumber: Box[NodeSeq],
       Empty, //screenCount: Box[NodeSeq],
       Empty, // wizardTop: Box[Elem],
       theScreen.screenTop, //screenTop: Box[Elem],
       theScreen.screenFields.filter(_.shouldDisplay_?).flatMap(f =>
-        if (f.show_?) List(ScreenFieldInfo(f, f.displayHtml, f.helpAsHtml, f.toForm)) else Nil), //fields: List[ScreenFieldInfo],
+        if (f.show_?) List(ScreenFieldInfo(f, f.displayHtml, f.helpAsHtml, f.toForm, fieldBinding(f))) else Nil), //fields: List[ScreenFieldInfo],
       Empty, // prev: Box[Elem],
       Full(cancelButton), // cancel: Box[Elem],
       Empty, // next: Box[Elem],
@@ -1500,3 +1552,35 @@ object LiftScreenRules extends Factory with FormVendor {
 
 }
 
+case class FieldBinding(val fieldName: String, val bindingStyle: FieldBinding.BindingStyle) {
+  private def fieldId(formName: String) = "%s_%s_field" format (formName, fieldName)
+  def selector(formName: String) = "#%s" format (fieldId(formName))
+  def childSelector(formName: String) = "#%s *" format (fieldId(formName))
+  def idSelector(formName: String) = selector(formName) + " [id]"
+}
+
+object FieldBinding {
+  sealed abstract class BindingStyle
+
+  /**
+   * Bind the field using the default template defined in an external template (as in Bind.helpers()-based binding)
+   */
+  case object Template extends BindingStyle
+
+  /**
+   * Bind the field using the template defined in the body of the field reference
+   */
+  case object Self extends BindingStyle
+
+  /**
+   * Bind the field using the template returned by the <code>defaultFieldNodeSeq</code> method
+   */
+  case object Default extends BindingStyle
+
+  /**
+   * Bind the field using the template provided
+   */
+  case class Custom(template: NodeSeq) extends BindingStyle
+
+  def apply(fieldName: String) = new FieldBinding(fieldName, Default)
+}
