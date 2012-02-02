@@ -277,6 +277,10 @@ trait AbstractScreen extends Factory {
         case AFieldBinding(i) => i
       }).headOption
 
+      val newHelp: Box[NodeSeq] = help or (stuff.collect {
+        case Help(ns) => ns
+      }).headOption
+
       new Field {
         type ValueType = T
 
@@ -296,7 +300,7 @@ trait AbstractScreen extends Factory {
 
         override implicit def manifest: Manifest[ValueType] = FieldBuilder.this.manifest
 
-        override def helpAsHtml = help
+        override def helpAsHtml = newHelp
 
         override def validations = FieldBuilder.this.validations
 
@@ -382,6 +386,8 @@ trait AbstractScreen extends Factory {
 
   protected final case class AFieldBinding(binding: FieldBinding) extends FilterOrValidate[Nothing]
 
+  protected final case class Help(ns: NodeSeq) extends FilterOrValidate[Nothing]
+
   protected def field[T](underlying: => BaseField {type ValueType = T},
                          stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): Field {type ValueType = T} = {
     val paramFieldId: Box[String] = (stuff.collect {
@@ -397,6 +403,10 @@ trait AbstractScreen extends Factory {
 
     val newBinding: Box[FieldBinding] = (stuff.collect {
       case AFieldBinding(i) => i
+    }).headOption
+
+    val newHelp: Box[NodeSeq] = (stuff.collect {
+      case Help(ns) => ns
     }).headOption
 
     new Field {
@@ -436,7 +446,7 @@ trait AbstractScreen extends Factory {
 
       override implicit def manifest: Manifest[ValueType] = man
 
-      override def helpAsHtml = underlying.helpAsHtml
+      override def helpAsHtml = newHelp or underlying.helpAsHtml
 
       override def validate: List[FieldError] = underlying.validate
 
@@ -478,6 +488,10 @@ trait AbstractScreen extends Factory {
 
     val newBinding: Box[FieldBinding] = (stuff.collect {
       case AFieldBinding(i) => i
+    }).headOption
+
+    val newHelp: Box[NodeSeq] = (stuff.collect {
+      case Help(ns) => ns
     }).headOption
 
     val confirmInfo = stuff.collect {
@@ -524,7 +538,7 @@ trait AbstractScreen extends Factory {
 
       override implicit def manifest: Manifest[ValueType] = man
 
-      override def helpAsHtml = underlying.flatMap(_.helpAsHtml)
+      override def helpAsHtml = newHelp or underlying.flatMap(_.helpAsHtml)
 
       override def validate: List[FieldError] = underlying.toList.flatMap(_.validate)
 
@@ -664,6 +678,10 @@ trait AbstractScreen extends Factory {
       case AFieldBinding(i) => i
     }).headOption
 
+    val newHelp: Box[NodeSeq] = (stuff.collect {
+      case Help(ns) => ns
+    }).headOption
+
     otherValue match {
       case OtherValueInitializerImpl(otherValueInitFunc) => {
         new Field {
@@ -693,6 +711,8 @@ trait AbstractScreen extends Factory {
           }.toList
 
           override def binding = newBinding
+
+          override def helpAsHtml = newHelp
 
           override def toForm: Box[NodeSeq] = theToForm(this)
         }
@@ -724,6 +744,8 @@ trait AbstractScreen extends Factory {
           }.toList
 
           override def binding = newBinding
+
+          override def helpAsHtml = newHelp
 
           override def toForm: Box[NodeSeq] = theToForm(this)
         }
