@@ -46,7 +46,7 @@ trait CssBoundScreen extends ScreenWizardRendered {
   protected val ReqLocalActions: AnyVar[Map[String, () => JsCmd], _]
   protected val SavLocalActions: AnyVar[Map[String, () => JsCmd], _]
 
-  protected def additionalFormBindings: Option[CssSel] = None
+  protected def additionalFormBindings: Box[CssSel] = Empty
 
   private object FieldBindingUtils {
     def sel(f: CssClassBinding => String, sel: String) = sel format (f(cssClassBinding))
@@ -119,7 +119,7 @@ trait CssBoundScreen extends ScreenWizardRendered {
     val notices: List[(NoticeType.Value, NodeSeq, Box[String])] = S.getAllNotices
 
     def fieldsWithStyle(style: BindingStyle, includeMissing: Boolean) = fields filter (field =>
-      field.binding map (_.bindingStyle == style) getOrElse (includeMissing))
+      field.binding map (_.bindingStyle == style) openOr (includeMissing))
 
     def bindingInfoWithFields(style: BindingStyle) =
       for (field <- fields;
@@ -275,7 +275,7 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
     val processed = S.session map (_.runTemplate("css-bound-screen", allTemplate)) openOr (allTemplate)
 
-    (savAdditionalFormBindings map (bindingFunc & _) getOrElse (bindingFunc))(processed)
+    (savAdditionalFormBindings map (bindingFunc & _) openOr (bindingFunc))(processed)
   }
 
   override protected def allTemplateNodeSeq: NodeSeq = {
