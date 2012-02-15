@@ -1460,7 +1460,7 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
     def fieldBinding(field: BaseField): Box[FieldBinding] =
       field match {
         case f: Field => f.binding
-        case _ => None
+        case _ => Empty
       }
 
     renderAll(
