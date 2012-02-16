@@ -40,11 +40,12 @@ trait CssBoundScreen extends ScreenWizardRendered {
   protected val LocalAction: AnyVar[String, _] = vendAVar[String]("")
 
   protected val NextId: AnyVar[String, _]
+  protected val PrevId: AnyVar[Box[String], _]
+  protected val CancelId: AnyVar[String, _]
+
   protected val LocalActionName: AnyVar[String, _]
 
-
-  protected val ReqLocalActions: AnyVar[Map[String, () => JsCmd], _]
-  protected val SavLocalActions: AnyVar[Map[String, () => JsCmd], _]
+  protected val LocalActions: AnyVar[Map[String, () => JsCmd], _]
 
   protected def additionalFormBindings: Box[CssSel] = Empty
 
@@ -81,7 +82,7 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
   protected def mapLocalAction[T](func: () => JsCmd)(f: String => T): T = {
     val name = randomString(20)
-    ReqLocalActions.set(ReqLocalActions.is + (name -> func))
+    LocalActions.set(LocalActions.is + (name -> func))
     f(name)
   }
 
@@ -105,13 +106,14 @@ trait CssBoundScreen extends ScreenWizardRendered {
     import FieldBindingUtils._
 
     NextId.set(nextId._1)
+    PrevId.set(prevId map (_._1))
+    CancelId.set(cancelId._1)
 
     def createLocalActionField(): NodeSeq = {
-      val hiddenField = SHtml.hidden((s) => LocalAction.set(s), "")
-      val name = (hiddenField \ "@name").toString
-      LocalActionName.set(name)
+      val hiddenField = SHtml.hidden(
+        (s) => (Box !! (s)).map(_.trim).filterNot(_.isEmpty).foreach(LocalAction.set(_)), "")
 
-      hiddenField % ("id" -> name)
+      hiddenField % ("id" -> LocalActionName.get)
     }
 
     val localActionField = createLocalActionField()
@@ -201,7 +203,6 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
     val savAdditionalFormBindings = additionalFormBindings
 
-    SavLocalActions.set(ReqLocalActions.get)
     val snapshot = createSnapshot
 
     def bindErrors: CssBindFunc = notices.filter(_._3.isEmpty) match {
