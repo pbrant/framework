@@ -226,6 +226,8 @@ trait AbstractScreen extends Factory {
     override def toString = is.toString
 
     def binding: Box[FieldBinding] = Empty
+
+    def transform: Box[() => CssSel] = Empty
   }
 
   protected object currentField extends ThreadGlobal[FieldIdentifier]
@@ -281,6 +283,10 @@ trait AbstractScreen extends Factory {
         case Help(ns) => ns
       }).headOption
 
+      val newTransform: Box[() => CssSel] = (stuff.collect {
+        case FieldTransform(func) => func
+      }).headOption
+
       new Field {
         type ValueType = T
 
@@ -313,6 +319,8 @@ trait AbstractScreen extends Factory {
 
         private lazy val _theFieldId: NonCleanAnyVar[String] =
           vendAVar(Helpers.nextFuncName)
+
+        override def transform = newTransform
       }
     }
   }
@@ -388,6 +396,8 @@ trait AbstractScreen extends Factory {
 
   protected final case class Help(ns: NodeSeq) extends FilterOrValidate[Nothing]
 
+  protected final case class FieldTransform(func: () => CssSel) extends FilterOrValidate[Nothing]
+
   protected def field[T](underlying: => BaseField {type ValueType = T},
                          stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): Field {type ValueType = T} = {
     val paramFieldId: Box[String] = (stuff.collect {
@@ -407,6 +417,10 @@ trait AbstractScreen extends Factory {
 
     val newHelp: Box[NodeSeq] = (stuff.collect {
       case Help(ns) => ns
+    }).headOption
+
+    val newTransform: Box[() => CssSel] = (stuff.collect {
+      case FieldTransform(func) => func
     }).headOption
 
     new Field {
@@ -469,6 +483,8 @@ trait AbstractScreen extends Factory {
       override def uniqueFieldId: Box[String] = paramFieldId or underlying.uniqueFieldId or super.uniqueFieldId
 
       override def binding = newBinding or super.binding
+
+      override def transform = newTransform or super.transform
     }
   }
 
@@ -492,6 +508,10 @@ trait AbstractScreen extends Factory {
 
     val newHelp: Box[NodeSeq] = (stuff.collect {
       case Help(ns) => ns
+    }).headOption
+
+    val newTransform: Box[() => CssSel] = (stuff.collect {
+      case FieldTransform(func) => func
     }).headOption
 
     val confirmInfo = stuff.collect {
@@ -555,6 +575,8 @@ trait AbstractScreen extends Factory {
       override def uniqueFieldId: Box[String] = paramFieldId or underlying.flatMap(_.uniqueFieldId) or super.uniqueFieldId
 
       override def binding = newBinding or super.binding
+
+      override def transform = newTransform or super.transform
     }
   }
 
@@ -682,6 +704,10 @@ trait AbstractScreen extends Factory {
       case Help(ns) => ns
     }).headOption
 
+    val newTransform: Box[() => CssSel] = (stuff.collect {
+      case FieldTransform(func) => func
+    }).headOption
+
     otherValue match {
       case OtherValueInitializerImpl(otherValueInitFunc) => {
         new Field {
@@ -715,6 +741,8 @@ trait AbstractScreen extends Factory {
           override def helpAsHtml = newHelp
 
           override def toForm: Box[NodeSeq] = theToForm(this)
+
+          override def transform = newTransform
         }
       }
 
@@ -748,6 +776,8 @@ trait AbstractScreen extends Factory {
           override def helpAsHtml = newHelp
 
           override def toForm: Box[NodeSeq] = theToForm(this)
+
+          override def transform = newTransform
         }
       }
     }
@@ -1265,9 +1295,10 @@ case class ScreenFieldInfo(
     text: NodeSeq,
     help: Box[NodeSeq],
     input: Box[NodeSeq],
-    binding: Box[FieldBinding]) {
+    binding: Box[FieldBinding],
+    transform: Box[() => CssSel]) {
   def this(field: FieldIdentifier, text: NodeSeq, help: Box[NodeSeq], input: Box[NodeSeq]) =
-    this(field, text, help, input, Empty)
+    this(field, text, help, input, Empty, Empty)
  }
 
 object ScreenFieldInfo {
@@ -1463,13 +1494,19 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
         case _ => Empty
       }
 
+    def fieldTransform(field: BaseField): Box[() => CssSel] =
+      field match {
+        case f: Field => f.transform
+        case _ => Empty
+      }
+
     renderAll(
       Empty, //currentScreenNumber: Box[NodeSeq],
       Empty, //screenCount: Box[NodeSeq],
       Empty, // wizardTop: Box[Elem],
       theScreen.screenTop, //screenTop: Box[Elem],
       theScreen.screenFields.filter(_.shouldDisplay_?).flatMap(f =>
-        if (f.show_?) List(ScreenFieldInfo(f, f.displayHtml, f.helpAsHtml, f.toForm, fieldBinding(f))) else Nil), //fields: List[ScreenFieldInfo],
+        if (f.show_?) List(ScreenFieldInfo(f, f.displayHtml, f.helpAsHtml, f.toForm, fieldBinding(f), fieldTransform(f))) else Nil), //fields: List[ScreenFieldInfo],
       Empty, // prev: Box[Elem],
       Full(cancelButton), // cancel: Box[Elem],
       Empty, // next: Box[Elem],

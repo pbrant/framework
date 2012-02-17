@@ -56,15 +56,15 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
     def remove(f: CssClassBinding => String) = ".%s".format(f(cssClassBinding)) #> NodeSeq.Empty
 
-    def nsSetChildren(f: CssClassBinding=>String, value: NodeSeq) = replaceChildren(f) #> value
-    def funcSetChildren(f: CssClassBinding=>String, value: NodeSeq=>NodeSeq) = replaceChildren(f) #> value
-    def optSetChildren(f: CssClassBinding=>String, value: Box[NodeSeq]) = replaceChildren(f) #> value
+    def nsSetChildren(f: CssClassBinding => String, value: NodeSeq) = replaceChildren(f) #> value
+    def funcSetChildren(f: CssClassBinding => String, value: NodeSeq => NodeSeq) = replaceChildren(f) #> value
+    def optSetChildren(f: CssClassBinding => String, value: Box[NodeSeq]) = replaceChildren(f) #> value
 
     def nsReplace(f: CssClassBinding=>String, value: NodeSeq) = replace(f) #> value
-    def funcReplace(f: CssClassBinding=>String, value: NodeSeq=>NodeSeq) = replace(f) #> value
+    def funcReplace(f: CssClassBinding=>String, value: NodeSeq => NodeSeq) = replace(f) #> value
     def optReplace(f: CssClassBinding=>String, value: Box[NodeSeq]) = replace(f) #> value
 
-    def updateAttrs(metaData: MetaData): NodeSeq=>NodeSeq = {
+    def updateAttrs(metaData: MetaData): NodeSeq => NodeSeq = {
       case e:Elem => e % metaData
     }
 
@@ -74,7 +74,7 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
   protected def bindLocalAction(selector: String, func: () => JsCmd): CssSel = {
     mapLocalAction(func)(name =>
-      (selector + " [onclick]") #> (
+      selector #> (
         JE.JsFunc((JqId(JE.Str(LocalActionName.get)) ~> JE.JsVal("val")).toJsCmd, JE.Str(name)).cmd &
         SHtml.makeAjaxCall(LiftRules.jsArtifacts.serialize(NextId.get))
       ).toJsCmd)
@@ -147,7 +147,7 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
     def bindFields: CssBindFunc = List(templateFields, selfFields, defaultFields, customFields).flatten.reduceLeft(_ & _)
 
-    def bindField(f: ScreenFieldInfo): CssBindFunc = {
+    def bindField(f: ScreenFieldInfo): NodeSeq => NodeSeq = {
       val theFormEarly = f.input
       val curId = theFormEarly.flatMap(Helpers.findId) or
         f.field.uniqueFieldId openOr Helpers.nextFuncName
@@ -196,7 +196,9 @@ trait CssBoundScreen extends ScreenWizardRendered {
           }
         }
 
-      bindLabel() & bindForm() & bindHelp() & bindErrors()
+      def bindAll() = bindLabel() & bindForm() & bindHelp() & bindErrors()
+
+      f.transform map (func => bindAll() andThen func()) openOr (bindAll())
     }
 
     def url = S.uri
