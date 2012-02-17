@@ -203,8 +203,6 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
     val savAdditionalFormBindings = additionalFormBindings
 
-    val snapshot = createSnapshot
-
     def bindErrors: CssBindFunc = notices.filter(_._3.isEmpty) match {
       case Nil => remove(_.globalErrors)
       case xs => replaceChildren(_.globalErrors) #> xs.map { case(noticeType, msg, _) =>
@@ -213,11 +211,18 @@ trait CssBoundScreen extends ScreenWizardRendered {
       }
     }
 
+    def bindFieldsWithAdditional(xhtml: NodeSeq) =
+      (savAdditionalFormBindings map (bindFields & _) openOr (bindFields))(xhtml)
+
     def bindForm(xhtml: NodeSeq): NodeSeq = {
+      val fields = bindFieldsWithAdditional(xhtml)
+
+      val snapshot = createSnapshot
+
       val ret =
         (<form id={nextId._1} action={url}
                method="post">{S.formGroup(-1)(SHtml.hidden(() =>
-          snapshot.restore()))}{localActionField}{bindFields(xhtml)}{
+          snapshot.restore()))}{localActionField}{fields}{
           S.formGroup(4)(
             SHtml.hidden(() =>
             {val res = nextId._2();

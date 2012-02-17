@@ -1575,7 +1575,7 @@ object LiftScreenRules extends Factory with FormVendor {
 }
 
 case class FieldBinding(val fieldName: String, val bindingStyle: FieldBinding.BindingStyle) {
-  private def fieldId(formName: String) = "%s_%s_field" format (formName, fieldName)
+  def fieldId(formName: String) = "%s_%s_field" format (formName, fieldName)
   def selector(formName: String) = "#%s" format (fieldId(formName))
   def childSelector(formName: String) = "#%s *" format (fieldId(formName))
   def idSelector(formName: String) = selector(formName) + " [id]"

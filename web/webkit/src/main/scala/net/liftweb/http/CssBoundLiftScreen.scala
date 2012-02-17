@@ -44,11 +44,7 @@ trait CssBoundLiftScreen extends LiftScreen with CssBoundScreen {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
-  protected object ReqLocalActions extends TransientRequestVar[Map[String, () => JsCmd]](Map[String, () => JsCmd]()) {
-    override lazy val __nameSalt = Helpers.nextFuncName
-  }
-
-  protected object SavLocalActions extends ScreenVar[Map[String, () => JsCmd]](Map[String, () => JsCmd]()) {
+  protected object LocalActions extends ScreenVar[Map[String, () => JsCmd]](Map[String, () => JsCmd]()) {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
@@ -61,7 +57,7 @@ trait CssBoundLiftScreen extends LiftScreen with CssBoundScreen {
   protected def defaultAllTemplate = super.allTemplate
 
   override protected def doFinish(): JsCmd= {
-    val fMap: Map[String, () => JsCmd] = SavLocalActions.get
+    val fMap: Map[String, () => JsCmd] = LocalActions.get
     if (! LocalAction.is.isEmpty && fMap.contains(LocalAction.is))
       fMap(LocalAction.is)()
     else {
