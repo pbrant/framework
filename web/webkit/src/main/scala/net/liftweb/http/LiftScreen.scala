@@ -169,6 +169,8 @@ trait AbstractScreen extends Factory {
      */
     def otherValue: OtherValueType = _otherValue.get
 
+    def setOtherValue(v: OtherValueType) = _otherValue.set(v)
+
     def default: ValueType
 
     def is = _currentValue.is
