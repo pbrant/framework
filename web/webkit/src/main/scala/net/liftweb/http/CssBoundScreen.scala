@@ -76,7 +76,8 @@ trait CssBoundScreen extends ScreenWizardRendered {
     mapLocalAction(func)(name =>
       selector #> (
         JE.JsFunc((JqId(JE.Str(LocalActionName.get)) ~> JE.JsVal("val")).toJsCmd, JE.Str(name)).cmd &
-        SHtml.makeAjaxCall(LiftRules.jsArtifacts.serialize(NextId.get))
+        SHtml.makeAjaxCall(LiftRules.jsArtifacts.serialize(NextId.get)).cmd &
+        JE.JsFunc((JqId(JE.Str(LocalActionName.get)) ~> JE.JsVal("val")).toJsCmd, JE.Str("")).cmd
       ).toJsCmd)
   }
 
@@ -110,8 +111,7 @@ trait CssBoundScreen extends ScreenWizardRendered {
     CancelId.set(cancelId._1)
 
     def createLocalActionField(): NodeSeq = {
-      val hiddenField = SHtml.hidden(
-        (s) => (Box !! (s)).map(_.trim).filterNot(_.isEmpty).foreach(LocalAction.set(_)), "")
+      val hiddenField = SHtml.hidden(LocalAction.set(_), "")
 
       hiddenField % ("id" -> LocalActionName.get)
     }
