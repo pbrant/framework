@@ -32,10 +32,6 @@ trait CssBoundLiftScreen extends LiftScreen with CssBoundScreen {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
-  protected object NextId extends TransientRequestVar[String]("") {
-    override lazy val __nameSalt = Helpers.nextFuncName
-  }
-
   protected object PrevId extends TransientRequestVar[Box[String]](Empty) {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
