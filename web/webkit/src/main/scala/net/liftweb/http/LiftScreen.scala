@@ -1358,6 +1358,10 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
+  object NextId extends TransientRequestVar[String](Helpers.nextFuncName) {
+    override lazy val __nameSalt = Helpers.nextFuncName
+  }
+
   /**
    * What to do when the Screen is done.  By default, will
    * do a redirect back to Whence, but you can change this behavior,
@@ -1467,7 +1471,7 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
   }
 
   protected def renderHtml(): NodeSeq = {
-    val finishId = Helpers.nextFuncName
+    val finishId = NextId.get
     val cancelId = Helpers.nextFuncName
 
     val theScreen = this

@@ -39,7 +39,8 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
   protected val LocalAction: AnyVar[String, _] = vendAVar[String]("")
 
-  protected val NextId: AnyVar[String, _]
+  val NextId: AnyVar[String, _]
+
   protected val PrevId: AnyVar[Box[String], _]
   protected val CancelId: AnyVar[String, _]
 
