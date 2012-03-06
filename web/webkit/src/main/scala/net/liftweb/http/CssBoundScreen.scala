@@ -28,7 +28,7 @@ import xml._
 
 import FieldBinding._
 
-trait CssBoundScreen extends ScreenWizardRendered {
+trait CssBoundScreen extends ScreenWizardRendered with Loggable {
   self: AbstractScreen =>
 
   def formName: String
@@ -50,27 +50,44 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
   protected def additionalFormBindings: Box[CssSel] = Empty
 
+  private def traceInline[T](msg: => String, v: T): T = {
+    logger.trace(msg)
+    v
+  }
+
   private object FieldBindingUtils {
     def sel(f: CssClassBinding => String, sel: String) = sel format (f(cssClassBinding))
     def replace(f: CssClassBinding => String) = ".%s" format (f(cssClassBinding))
     def replaceChildren(f: CssClassBinding => String) = ".%s *" format (f(cssClassBinding))
 
-    def remove(f: CssClassBinding => String) = ".%s".format(f(cssClassBinding)) #> NodeSeq.Empty
+    def remove(f: CssClassBinding => String) =
+      traceInline("Removing %s".format(f(cssClassBinding)), ".%s".format(f(cssClassBinding))) #> NodeSeq.Empty
 
-    def nsSetChildren(f: CssClassBinding => String, value: NodeSeq) = replaceChildren(f) #> value
-    def funcSetChildren(f: CssClassBinding => String, value: NodeSeq => NodeSeq) = replaceChildren(f) #> value
-    def optSetChildren(f: CssClassBinding => String, value: Box[NodeSeq]) = replaceChildren(f) #> value
+    def nsSetChildren(f: CssClassBinding => String, value: NodeSeq) =
+      traceInline("Binding %s to %s".format(replaceChildren(f), value), replaceChildren(f) #> value)
 
-    def nsReplace(f: CssClassBinding=>String, value: NodeSeq) = replace(f) #> value
-    def funcReplace(f: CssClassBinding=>String, value: NodeSeq => NodeSeq) = replace(f) #> value
-    def optReplace(f: CssClassBinding=>String, value: Box[NodeSeq]) = replace(f) #> value
+    def funcSetChildren(f: CssClassBinding => String, value: NodeSeq => NodeSeq) =
+      traceInline("Binding %s to function".format(replaceChildren(f)), replaceChildren(f) #> value)
+
+    def optSetChildren(f: CssClassBinding => String, value: Box[NodeSeq]) =
+      traceInline("Binding %s to %s".format(replaceChildren(f), value), replaceChildren(f) #> value)
+
+    def nsReplace(f: CssClassBinding=>String, value: NodeSeq) =
+      traceInline("Binding %s to %s".format(replace(f), value), replace(f) #> value)
+
+    def funcReplace(f: CssClassBinding=>String, value: NodeSeq => NodeSeq) =
+      traceInline("Binding %s to function".format(replace(f)), replace(f) #> value)
+
+    def optReplace(f: CssClassBinding=>String, value: Box[NodeSeq]) =
+      traceInline("Binding %s to %s".format(replace(f), value), replace(f) #> value)
 
     def updateAttrs(metaData: MetaData): NodeSeq => NodeSeq = {
       case e:Elem => e % metaData
     }
 
     def update(f: CssClassBinding => String, metaData: MetaData) =
-      ".%s".format(f(cssClassBinding)) #> updateAttrs(metaData)
+      traceInline("Update %s with %s".format(f(cssClassBinding), metaData),
+        ".%s".format(f(cssClassBinding)) #> updateAttrs(metaData))
   }
 
   protected def bindLocalAction(selector: String, func: () => JsCmd): CssSel = {
@@ -121,32 +138,41 @@ trait CssBoundScreen extends ScreenWizardRendered {
 
     val notices: List[(NoticeType.Value, NodeSeq, Box[String])] = S.getAllNotices
 
-    def fieldsWithStyle(style: BindingStyle, includeMissing: Boolean) = fields filter (field =>
-      field.binding map (_.bindingStyle == style) openOr (includeMissing))
+    def fieldsWithStyle(style: BindingStyle, includeMissing: Boolean) =
+      logger.trace("Looking for fields with style %s, includeMissing = %s".format(style, includeMissing),
+        fields filter (field => field.binding map (_.bindingStyle == style) openOr (includeMissing)))
 
     def bindingInfoWithFields(style: BindingStyle) =
-      for (field <- fields;
-           bindingInfo <- field.binding if bindingInfo.bindingStyle == style)
-      yield (bindingInfo, field)
+      logger.trace("Looking for fields with style %s".format(style),
+        (for {
+          field <- fields;
+          bindingInfo <- field.binding if bindingInfo.bindingStyle == style
+        } yield (bindingInfo, field)).toList)
 
     def templateFields: List[CssBindFunc] = List(sel(_.fieldContainer, ".%s") #> (fieldsWithStyle(Template, true) map (field => bindField(field))))
 
     def selfFields: List[CssBindFunc] =
       for ((bindingInfo, field) <- bindingInfoWithFields(Self))
-      yield bindingInfo.selector(formName) #> bindField(field)
+      yield traceInline("Binding self field %s".format(bindingInfo.selector(formName)),
+        bindingInfo.selector(formName) #> bindField(field))
 
     def defaultFields: List[CssBindFunc] =
       for ((bindingInfo, field) <- bindingInfoWithFields(Default))
-      yield bindingInfo.selector(formName) #> bindField(field)(defaultFieldNodeSeq)
+      yield traceInline("Binding default field %s to %s".format(bindingInfo.selector(formName), defaultFieldNodeSeq),
+        bindingInfo.selector(formName) #> bindField(field)(defaultFieldNodeSeq))
 
     def customFields: List[CssBindFunc] =
       for {
         field <- fields
         bindingInfo <- field.binding
         custom <- Some(bindingInfo.bindingStyle) collect { case c:Custom => c }
-      } yield bindingInfo.selector(formName) #> bindField(field)(custom.template)
+      } yield traceInline("Binding custom field %s to %s".format(bindingInfo.selector(formName), custom.template),
+        bindingInfo.selector(formName) #> bindField(field)(custom.template))
 
-    def bindFields: CssBindFunc = List(templateFields, selfFields, defaultFields, customFields).flatten.reduceLeft(_ & _)
+    def bindFields: CssBindFunc = {
+      logger.trace("Binding fields", fields)
+      List(templateFields, selfFields, defaultFields, customFields).flatten.reduceLeft(_ & _)
+    }
 
     def bindField(f: ScreenFieldInfo): NodeSeq => NodeSeq = {
       val theFormEarly = f.input
@@ -180,7 +206,9 @@ trait CssBoundScreen extends ScreenWizardRendered {
         }
       }
 
-      def bindForm(): CssBindFunc = replace(_.value) #> theForm
+      def bindForm(): CssBindFunc =
+        traceInline("Replacing %s with %s".format(replace(_.value), theForm),
+          replace(_.value) #> theForm)
 
       def bindHelp(): CssBindFunc =
         f.help match {
@@ -269,6 +297,8 @@ trait CssBoundScreen extends ScreenWizardRendered {
         replaceChildren(_.screenInfo) #> (nsSetChildren(_.screenNumber, num) & nsSetChildren(_.totalScreens, cnt))
       case _ => remove(_.screenInfo)
     }
+
+    logger.trace("Preparing to bind", fields)
 
     val bindingFunc: CssBindFunc =
       bindScreenInfo &
