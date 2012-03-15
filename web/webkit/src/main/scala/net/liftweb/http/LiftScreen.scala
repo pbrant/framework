@@ -1358,7 +1358,7 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
-  object NextId extends TransientRequestVar[String](Helpers.nextFuncName) {
+  object NextId extends ScreenVar[String](Helpers.nextFuncName) {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
@@ -1449,6 +1449,7 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
     Referer.get // touch to capture the referer
     Ajax_?.get // capture the ajaxiness of these forms
     FormGUID.get
+    NextId.get
 
     if (FirstTime) {
       FirstTime.set(false)
