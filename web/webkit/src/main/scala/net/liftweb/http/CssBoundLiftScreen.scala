@@ -58,8 +58,9 @@ trait CssBoundLiftScreen extends LiftScreen with CssBoundScreen {
 
   override protected def doFinish(): JsCmd= {
     val fMap: Map[String, () => JsCmd] = LocalActions.get
-    if (! LocalAction.is.isEmpty && fMap.contains(LocalAction.is))
-      fMap(LocalAction.is)()
+    if (! LocalAction.get.isEmpty)
+      fMap.get(LocalAction.get) map (_()) getOrElse (
+        throw new IllegalArgumentException("No local action available with that binding"))
     else {
       validate match {
         case Nil =>
