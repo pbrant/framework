@@ -37,7 +37,7 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
 
   protected lazy val cssClassBinding = new CssClassBinding
 
-  protected val LocalAction: AnyVar[String, _] = vendAVar[String]("")
+  protected val LocalAction: AnyVar[String, _]
 
   val NextId: AnyVar[String, _]
 
