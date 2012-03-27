@@ -289,6 +289,10 @@ trait AbstractScreen extends Factory {
         case FieldTransform(func) => func
       }).headOption
 
+      val newShow: Box[() => Boolean] = (stuff.collect {
+        case DisplayIf(func) => func
+      }).headOption
+
       new Field {
         type ValueType = T
 
@@ -323,6 +327,8 @@ trait AbstractScreen extends Factory {
           vendAVar(Helpers.nextFuncName)
 
         override def transform = newTransform
+
+        override def show_? = newShow map (_()) openOr (super.show_?)
       }
     }
   }
@@ -400,6 +406,8 @@ trait AbstractScreen extends Factory {
 
   protected final case class FieldTransform(func: () => CssSel) extends FilterOrValidate[Nothing]
 
+  protected final case class DisplayIf(func: () => Boolean) extends FilterOrValidate[Nothing]
+
   protected def field[T](underlying: => BaseField {type ValueType = T},
                          stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): Field {type ValueType = T} = {
     val paramFieldId: Box[String] = (stuff.collect {
@@ -425,6 +433,10 @@ trait AbstractScreen extends Factory {
       case FieldTransform(func) => func
     }).headOption
 
+    val newShow: Box[() => Boolean] = (stuff.collect {
+      case DisplayIf(func) => func
+    }).headOption
+
     new Field {
       type ValueType = T
 
@@ -438,7 +450,7 @@ trait AbstractScreen extends Factory {
       /**
        * Give the current state of things, should the this field be shown
        */
-      override def show_? = underlying.show_?
+      override def show_? = newShow map (_()) openOr underlying.show_?
 
       /**
        * What form elements are we going to add to this field?
@@ -516,6 +528,10 @@ trait AbstractScreen extends Factory {
       case FieldTransform(func) => func
     }).headOption
 
+    val newShow: Box[() => Boolean] = (stuff.collect {
+      case DisplayIf(func) => func
+    }).headOption
+
     val confirmInfo = stuff.collect {
       case NotOnConfirmScreen => false
     }.headOption orElse
@@ -536,7 +552,7 @@ trait AbstractScreen extends Factory {
       /**
        * Give the current state of things, should the this field be shown
        */
-      override def show_? = underlying.map(_.show_?) openOr false
+      override def show_? = newShow map (_()) openOr (underlying.map(_.show_?) openOr false)
 
       /**
        * What form elements are we going to add to this field?
@@ -710,6 +726,10 @@ trait AbstractScreen extends Factory {
       case FieldTransform(func) => func
     }).headOption
 
+    val newShow: Box[() => Boolean] = (stuff.collect {
+      case DisplayIf(func) => func
+    }).headOption
+
     otherValue match {
       case OtherValueInitializerImpl(otherValueInitFunc) => {
         new Field {
@@ -745,6 +765,8 @@ trait AbstractScreen extends Factory {
           override def toForm: Box[NodeSeq] = theToForm(this)
 
           override def transform = newTransform
+
+          override def show_? = newShow map (_()) openOr (super.show_?)
         }
       }
 
@@ -780,6 +802,8 @@ trait AbstractScreen extends Factory {
           override def toForm: Box[NodeSeq] = theToForm(this)
 
           override def transform = newTransform
+
+          override def show_? = newShow map (_()) openOr (super.show_?)
         }
       }
     }
