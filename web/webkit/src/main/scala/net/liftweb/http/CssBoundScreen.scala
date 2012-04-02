@@ -129,7 +129,11 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
     CancelId.set(cancelId._1)
 
     def createLocalActionField(): NodeSeq = {
-      val hiddenField = SHtml.hidden(LocalAction.set(_), "")
+      val hiddenField = SHtml.hidden({ s =>
+          logger.debug("Setting LocalAction (%s) to %s".format(
+            Integer.toString(System.identityHashCode(LocalAction), 16), s))
+          LocalAction.set(s) },
+        "")
 
       hiddenField % ("id" -> LocalActionName.get)
     }
