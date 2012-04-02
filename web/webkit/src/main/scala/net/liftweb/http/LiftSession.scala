@@ -400,12 +400,16 @@ private[http] object RenderVersion {
         func <- sess.findFunc(v).collect {
           case f: S.PageStateHolder => f
         }
-    } yield {
-        val tret = ver.doWith(v)(func.runInContext(f))
+      } yield {
+        val tret = ver.doWith(v) {
+          val ret = func.runInContext(f)
 
-        if (S.functionMap.size > 0) {
-          sess.updateFunctionMap(S.functionMap, this.get, millis)
-          S.clearFunctionMap
+
+          if (S.functionMap.size > 0) {
+            sess.updateFunctionMap(S.functionMap, this.get, millis)
+            S.clearFunctionMap
+          }
+          ret
         }
         tret
       }
@@ -696,7 +700,9 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
    */
   def updateFunctionMap(funcs: Map[String, S.AFuncHolder], uniqueId: String, when: Long): Unit = synchronized {
     funcs.foreach {
-      case (name, func) => messageCallback(name) = func.duplicate(uniqueId)
+      case (name, func) =>
+        messageCallback(name) =
+          if (func.owner == Full(uniqueId)) func else func.duplicate(uniqueId)
     }
   }
 
@@ -994,7 +1000,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
    * @param path -- the ParsePath that led to this page
    * @param code -- the HTTP response code (usually 200)
    *
-   * @returns a Box of LiftResponse with all the proper page rewriting
+   * @return a Box of LiftResponse with all the proper page rewriting
    */
   def processTemplate(template: Box[NodeSeq], request: Req, path: ParsePath, code: Int): Box[LiftResponse] = {
     overrideResponseCode.doWith(Empty) {
@@ -1139,7 +1145,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
 
       case e: LiftFlowOfControlException => throw e
 
-      case e => NamedPF.applyBox((Props.mode, request, e), LiftRules.exceptionHandler.toList);
+      case e => S.assertExceptionThrown() ; NamedPF.applyBox((Props.mode, request, e), LiftRules.exceptionHandler.toList);
 
     }
 

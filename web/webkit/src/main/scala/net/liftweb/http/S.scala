@@ -218,13 +218,13 @@ object S extends S {
   }
 
   /**
-   * We create one of these dudes and put it 
+   * We create one of these dudes and put it
    */
   private[http] final case class PageStateHolder(owner: Box[String], session: LiftSession) extends AFuncHolder {
     private val loc = S.location
     private val snapshot:  Function1[Function0[Any], Any] = RequestVarHandler.generateSnapshotRestorer()
     override def sessionLife: Boolean = false
-    
+
     def apply(in: List[String]): Any = {
       error("You shouldn't really be calling apply on this dude...")
     }
@@ -338,6 +338,8 @@ trait S extends HasParams with Loggable {
   private val _oneShot = new ThreadGlobal[Boolean]
   private val _disableTestFuncNames = new ThreadGlobal[Boolean]
 
+  private object _exceptionThrown extends TransientRequestVar(false)
+
   private object postFuncs extends TransientRequestVar(new ListBuffer[() => Unit])
 
   /**
@@ -352,6 +354,8 @@ trait S extends HasParams with Loggable {
    */
   private object _jsToAppend extends TransientRequestVar(new ListBuffer[JsCmd])
 
+  private object _globalJsToAppend extends TransientRequestVar(new ListBuffer[JsCmd])
+
   /**
    * We can now collect Elems to put in the head tag
    */
@@ -361,7 +365,7 @@ trait S extends HasParams with Loggable {
    * We can now collect Elems to put at the end of the body
    */
   private object _tailTags extends TransientRequestVar(new ListBuffer[Elem])
-  
+
   private object p_queryLog extends TransientRequestVar(new ListBuffer[(String, Long)])
   private object p_notice extends TransientRequestVar(new ListBuffer[(NoticeType.Value, NodeSeq, Box[String])])
 
@@ -383,6 +387,18 @@ trait S extends HasParams with Loggable {
   private[http] object CurrentLocation extends RequestVar[Box[sitemap.Loc[_]]](request.flatMap(_.location))
 
   def location: Box[sitemap.Loc[_]] = CurrentLocation.is
+
+
+  /**
+   * An exception was thrown during the processing of this request.
+   * This is tested to see if the transaction should be rolled back
+   */
+  def assertExceptionThrown() {_exceptionThrown.set(true)}
+
+  /**
+   * Was an exception thrown during the processing of the current request?
+   */
+  def exceptionThrown_? : Boolean = _exceptionThrown.get
 
   /**
    * @return a List of any Cookies that have been set for this Response. If you want
@@ -558,7 +574,7 @@ trait S extends HasParams with Loggable {
    * Get the current instance of HtmlProperties
    */
   def htmlProperties: HtmlProperties = {
-    session.map(_.requestHtmlProperties.is) openOr 
+    session.map(_.requestHtmlProperties.is) openOr
     LiftRules.htmlProperties.vend(
       S.request openOr Req.nil
     )
@@ -768,8 +784,11 @@ trait S extends HasParams with Loggable {
    * Sometimes it's helpful to accumute JavaScript as part of servicing
    * a request.  For example, you may want to accumulate the JavaScript
    * as part of an Ajax response or a Comet Rendering or
-   * as part of a regular HTML rendering.  Call S.appendJs(jsCmd).
-   * The accumulation of Js will be emitted as part of the response.
+   * as part of a regular HTML rendering.  Call `S.appendJs(jsCmd)`.
+   * The accumulated Javascript will be emitted as part of the response,
+   * wrapped in an `OnLoad` to ensure that it executes after
+   * the entire dom is available. If for some reason you need to run
+   * javascript at the top-level scope, use appendGlobalJs.
    */
   def appendJs(js: JsCmd): Unit = _jsToAppend.is += js
 
@@ -777,10 +796,24 @@ trait S extends HasParams with Loggable {
    * Sometimes it's helpful to accumute JavaScript as part of servicing
    * a request.  For example, you may want to accumulate the JavaScript
    * as part of an Ajax response or a Comet Rendering or
-   * as part of a regular HTML rendering.  Call S.appendJs(jsCmd).
-   * The accumulation of Js will be emitted as part of the response.
+   * as part of a regular HTML rendering.  Call `S.appendJs(jsCmd)`.
+   * The accumulated Javascript will be emitted as part of the response,
+   * wrapped in an `OnLoad` to ensure that it executes after
+   * the entire dom is available. If for some reason you need to run
+   * javascript at the top-level scope, use `appendGlobalJs`.
    */
   def appendJs(js: Seq[JsCmd]): Unit = _jsToAppend.is ++= js
+
+  /**
+   * Add javascript to the page rendering that
+   * will execute in the global scope.
+   * Usually you should use `appendJs`, so that the javascript
+   * runs after the entire dom is available. If you need to
+   * declare a global var or you want javascript to execute
+   * immediately with no guarantee that the entire dom is available,
+   * you may use `appendGlobalJs`.
+   */
+  def appendGlobalJs(js: JsCmd*): Unit = _globalJsToAppend.is ++= js
 
   /**
    * Get the accumulated JavaScript
@@ -789,17 +822,18 @@ trait S extends HasParams with Loggable {
    */
   def jsToAppend(): List[JsCmd] = {
     import js.JsCmds._
-    (for {
-      sess <- S.session
-    } yield sess.postPageJavaScript(RenderVersion.get :: 
-                                    S.currentCometActor.
-                                    map(_.uniqueId).toList)) match {
-      case Full(xs) if !xs.isEmpty => List(OnLoad(_jsToAppend.is.toList ::: xs))
-      case _ => _jsToAppend.is.toList match {
-        case Nil => Nil
-        case xs => List(OnLoad(xs))
+    _globalJsToAppend.is.toList ::: (
+      S.session.map( sess =>
+        sess.postPageJavaScript(RenderVersion.get ::
+                                S.currentCometActor.map(_.uniqueId).toList)
+      ) match {
+        case Full(xs) if !xs.isEmpty => List(OnLoad(_jsToAppend.is.toList ::: xs))
+        case _ => _jsToAppend.is.toList match {
+          case Nil => Nil
+          case xs => List(OnLoad(xs))
+        }
       }
-    }
+    )
   }
 
   /**
@@ -862,7 +896,7 @@ trait S extends HasParams with Loggable {
    */
   def loc(str: String, dflt: NodeSeq): NodeSeq = loc(str).openOr(dflt)
 
-  
+
   /**
    * Localize the incoming string based on a resource bundle for the current locale. The
    * localized string is converted to an XML element if necessary via the <code>LiftRules.localizeStringToXml</code>
@@ -1202,12 +1236,12 @@ for {
   def init[B](request: Req, session: LiftSession)(f: => B): B = {
     if (inS.value) f
     else {
-      if (request.stateless_?) 
+      if (request.stateless_?)
         session.doAsStateless(_init(request, session)(() => f))
       else _init(request, session)(() => f)
     }
   }
-  
+
   def statelessInit[B](request: Req)(f: => B): B = {
     session match {
       case Full(s) if s.stateful_? => {
@@ -1215,13 +1249,13 @@ for {
           "Attempt to initialize a stateless session within the context "+
           "of a stateful session")
       }
-      
+
       case Full(_) => f
 
       case _ => {
         val fakeSess = LiftRules.statelessSession.vend.apply(request)
         try {
-          _init(request, 
+          _init(request,
                 fakeSess)(() => f)
         } finally {
           // ActorPing.schedule(() => fakeSess.doShutDown(), 0 seconds)
@@ -1543,11 +1577,11 @@ for {
             session match {
               case Full(s) if s.stateful_? =>
                 LiftRules.earlyInStateful.toList.foreach(_(req))
-              
-              case Full(s) => 
+
+              case Full(s) =>
                 LiftRules.earlyInStateless.toList.foreach(_(req))
 
-              case _ => 
+              case _ =>
             }
             f
           }
@@ -1561,9 +1595,9 @@ for {
   private def doStatefulRewrite(old: Req): Req = {
     // Don't even try to rewrite Req.nil
     if (statefulRequest_? &&
-        !old.path.partPath.isEmpty && 
+        !old.path.partPath.isEmpty &&
         (old.request ne null))
-      Req(old, S.sessionRewriter.map(_.rewrite) ::: 
+      Req(old, S.sessionRewriter.map(_.rewrite) :::
           LiftRules.statefulRewrite.toList, LiftRules.statelessTest.toList,
       LiftRules.statelessReqTest.toList)
     else old
@@ -2001,7 +2035,7 @@ for {
   /**
    * Retrieves the attributes from the most recently executed
    * snippet element.
-   * 
+   *
    * For example, given the snippets:
    *
    * <pre name="code" class="xml">
@@ -2610,7 +2644,7 @@ for {
 
   @deprecated("Use AFuncHolder.listStrToAF")
   def toLFunc(in: List[String] => Any): AFuncHolder = LFuncHolder(in, Empty)
- 
+
   @deprecated("Use AFuncHolder.unitToAF")
   def toNFunc(in: () => Any): AFuncHolder = NFuncHolder(in, Empty)
 
@@ -2674,17 +2708,17 @@ for {
           case Full(ret) =>
             ret.fixSessionTime()
           ret
-          
+
           case _ =>
             val ret = LiftSession(httpRequest.session, req.contextPath)
           ret.fixSessionTime()
-          SessionMaster.addSession(ret, 
+          SessionMaster.addSession(ret,
                                    req,
-                                   httpRequest.userAgent, 
+                                   httpRequest.userAgent,
                                    SessionMaster.getIpFromReq(req))
           ret
         }
-        
+
         init(req, ses) {
           doRender(ses)
         }
@@ -2727,14 +2761,14 @@ for {
   /**
    * Returns all the HTTP parameters having 'n' name
    */
-  def params(n: String): List[String] = 
+  def params(n: String): List[String] =
     paramsForComet.get.get(n) getOrElse
     request.flatMap(_.params.get(n)).openOr(Nil)
 
   /**
    * Returns the HTTP parameter having 'n' name
    */
-  def param(n: String): Box[String] = 
+  def param(n: String): Box[String] =
     paramsForComet.get.get(n).flatMap(_.headOption) orElse
     request.flatMap(r => Box(r.param(n)))
 

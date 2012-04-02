@@ -26,6 +26,7 @@ import http.js.AjaxInfo
 import JE._
 import JsCmds._
 import scala.xml._
+import json._
 
 class SHtmlJBridge {
   def sHtml = SHtml
@@ -155,7 +156,7 @@ trait SHtml {
    *
    * @return the function ID and JavaScript that makes the call
    */
-  def ajaxCall(jsCalcValue: JsExp, func: String => JsCmd): (String, JsExp) = ajaxCall_*(jsCalcValue, SFuncHolder(func))
+  def ajaxCall(jsCalcValue: JsExp, func: String => JsCmd): GUIDJsExp = ajaxCall_*(jsCalcValue, SFuncHolder(func))
 
   /**
    * Build a JavaScript function that will perform an AJAX call based on a value calculated in JavaScript
@@ -166,8 +167,36 @@ trait SHtml {
    *
    * @return the function ID and JavaScript that makes the call
    */
-  def ajaxCall(jsCalcValue: JsExp, jsContext: JsContext, func: String => JsCmd): (String, JsExp) =
+  def ajaxCall(jsCalcValue: JsExp, jsContext: JsContext, func: String => JsCmd): GUIDJsExp =
     ajaxCall_*(jsCalcValue, jsContext, SFuncHolder(func))
+
+  /**
+   * Build a JavaScript function that will perform a JSON call based on a value calculated in JavaScript.
+   * This method uses the Lift-JSON package rather than the old, slow, not-typed JSONParser.  This is the preferred
+   * way to do client to server JSON calls.
+   *
+   * @param jsCalcValue the JavaScript to calculate the value to be sent to the server
+   * @param func the function to call when the data is sent
+   *
+   * @return the function ID and JavaScript that makes the call
+   */
+  def jsonCall(jsCalcValue: JsExp, func: JsonAST.JValue => JsCmd): GUIDJsExp =
+    jsonCall_*(jsCalcValue, SFuncHolder(s => parseOpt(s).map(func) getOrElse Noop))
+
+  /**
+   * Build a JavaScript function that will perform a JSON call based on a value calculated in JavaScript.
+   * This method uses the Lift-JSON package rather than the old, slow, not-typed JSONParser.  This is the preferred
+   * way to do client to server JSON calls.
+   *
+   * @param jsCalcValue the JavaScript to calculate the value to be sent to the server
+   * @param jsContext the context instance that defines JavaScript to be executed on call success or failure
+   * @param func the function to call when the data is sent
+   *
+   * @return the function ID and JavaScript that makes the call
+   */
+  def jsonCall(jsCalcValue: JsExp, jsContext: JsContext, func: JsonAST.JValue => JsCmd): GUIDJsExp =
+    jsonCall_*(jsCalcValue, jsContext, SFuncHolder(s => parseOpt(s).map(func) getOrElse Noop))
+
 
   /**
    * Build a JavaScript function that will perform a JSON call based on a value calculated in JavaScript
@@ -177,7 +206,8 @@ trait SHtml {
    *
    * @return the function ID and JavaScript that makes the call
    */
-  def jsonCall(jsCalcValue: JsExp, func: Any => JsCmd): (String, JsExp) =
+  @scala.deprecated("Use jsonCall with a function that takes JValue => JsCmd")
+  def jsonCall(jsCalcValue: JsExp, func: Any => JsCmd)(implicit d: AvoidTypeErasureIssues1): GUIDJsExp =
     jsonCall_*(jsCalcValue, SFuncHolder(s => JSONParser.parse(s).map(func) openOr Noop))
 
   /**
@@ -189,7 +219,8 @@ trait SHtml {
    *
    * @return the function ID and JavaScript that makes the call
    */
-  def jsonCall(jsCalcValue: JsExp, jsContext: JsContext, func: Any => JsCmd): (String, JsExp) =
+  @scala.deprecated("Use jsonCall with a function that takes JValue => JsCmd")
+  def jsonCall(jsCalcValue: JsExp, jsContext: JsContext, func: Any => JsCmd)(implicit d: AvoidTypeErasureIssues1): GUIDJsExp =
     jsonCall_*(jsCalcValue, jsContext, SFuncHolder(s => JSONParser.parse(s).map(func) openOr Noop))
 
 
@@ -219,16 +250,16 @@ trait SHtml {
             (name, makeAjaxCall(JsRaw("'" + name + "=' + encodeURIComponent(JSON.stringify(" + jsCalcValue.toJsCmd + "))"), ajaxContext)))
 
   def fajaxCall[T](jsCalcValue: JsExp, func: String => JsCmd)(f: (String, JsExp) => T): T = {
-    val (name, js) = ajaxCall(jsCalcValue, func)
+    val (name, js) = ajaxCall(jsCalcValue, func).product
     f(name, js)
   }
 
   def jsonCall(jsCalcValue: JsExp,
                jsonContext: JsonContext,
-               func: String => JsObj): (String, JsExp) = ajaxCall_*(jsCalcValue, jsonContext, SFuncHolder(func))
+               func: String => JsObj): GUIDJsExp = ajaxCall_*(jsCalcValue, jsonContext, SFuncHolder(func))
 
   def fjsonCall[T](jsCalcValue: JsExp, jsonContext: JsonContext, func: String => JsObj)(f: (String, JsExp) => T): T = {
-    val (name, js) = jsonCall(jsCalcValue, jsonContext, func)
+    val (name, js) = jsonCall(jsCalcValue, jsonContext, func).product
     f(name, js)
   }
 
@@ -492,9 +523,8 @@ trait SHtml {
    * @param attrs - the anchor node attributes
    */
   def a(func: () => JsCmd, body: NodeSeq, attrs: ElemAttr*): Elem = {
-    val key = formFuncName
-    addFunctionMap(key, ((a: List[String]) => func()))
-    attrs.foldLeft(<lift:a key={key}>{body}</lift:a>)(_ % _)
+    attrs.foldLeft(fmapFunc((func))(name =>
+      <a href="javascript://" onclick={makeAjaxCall(Str(name + "=true")).toJsCmd + "; return false;"}>{body}</a>))(_ % _)
   }
 
   /**
@@ -915,7 +945,7 @@ trait SHtml {
     }
   }
 
-  def ajaxInvoke(func: () => JsCmd): (String, JsExp) =
+  def ajaxInvoke(func: () => JsCmd): GUIDJsExp =
     fmapFunc((NFuncHolder(func)))(name => (name, makeAjaxCall(name + "=true")))
 
   /**
@@ -1083,7 +1113,7 @@ trait SHtml {
    * "input [onblur]" #> SHtml.onEvent(s => Alert("Thanks: "+s))
    * </code>
    */
-  def onEvent(func: String => JsCmd): (String, JsExp) = 
+  def onEvent(func: String => JsCmd): GUIDJsExp = 
     ajaxCall(JsRaw("this.value"), func)
 
   /**
@@ -2115,4 +2145,36 @@ final case class NodeSeqFunc(f: NodeSeq => NodeSeq) extends NodeSeqFuncOrSeqNode
 
 final case class SeqNodeSeqFunc(f: Seq[NodeSeq => NodeSeq]) extends NodeSeqFuncOrSeqNodeSeqFunc {
   def apply(ns: NodeSeq): NodeSeq = f.flatMap(_(ns))
+}
+
+/**
+ * A long time ago, Lift was going to track every function/GUID combination vended to
+ * a web page with extreme granularity. This meant that for every function/GUID vended,
+ * Lift would put that GUID in an attribute associated with the element on the page.  In
+ * order to capture the GUIDs, some methods like SHtml.ajaxCall() returned a Tuple containing
+ * the GUID and the JsExp.  This caused confusion and ugly code.  So, the GUIDJsExp
+ * came into being.  Basically, it's backward compatible with the Tuple (String, JsExp), but
+ * it functions like a JsExp (although you don't even have to call .toJsCmd because
+ * the toString method returns the expresion itself).  It should make the ajaxCall()._2.toJsCmd
+ * thing into ajaxCall().
+ */
+class GUIDJsExp(val guid: String,val exp: JsExp) extends JsExp {
+  def product: (String, JsExp) = this
+
+  def _1: String = guid
+  def _2: JsExp = exp
+
+  def toJsCmd: String = exp.toJsCmd
+
+  override def toString = this.toJsCmd
+}
+
+/**
+ * The companion object for GUIDJsExp that does helpful implicit conversions.
+ */
+object GUIDJsExp {
+  implicit def guidToTuple(in: GUIDJsExp): (String, JsExp) = (in.guid, in.exp)
+  implicit def tupleToGUIDJS(in: (String, JsExp)): GUIDJsExp = new GUIDJsExp(in._1, in._2)
+
+  def unapply(in: GUIDJsExp): Option[(String, JsExp)] = Some(in)
 }

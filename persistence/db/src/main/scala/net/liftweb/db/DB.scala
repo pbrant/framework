@@ -21,6 +21,8 @@ import common._
 import util._
 import Helpers._
 
+import net.liftweb.http.S
+
 import javax.sql.{DataSource}
 import java.sql.ResultSetMetaData
 import java.sql.{Statement, ResultSet, Types, PreparedStatement, Connection, DriverManager}
@@ -240,13 +242,13 @@ trait DB extends Loggable {
               try {
                 try {
                   val ret = f
-                  success = true
+                  success = !S.exceptionThrown_?
                   ret
                 } catch {
                   // this is the case when we want to commit the transaction
                   // but continue to throw the exception
                   case e: LiftFlowOfControlException => {
-                    success = true
+                    success = !S.exceptionThrown_?
                     throw e
                   }
                 }
@@ -263,13 +265,13 @@ trait DB extends Loggable {
             try {
               try {
                 val ret = f
-                success = true
+                success = !S.exceptionThrown_?
                 ret
               } catch {
                 // this is the case when we want to commit the transaction
                 // but continue to throw the exception
                 case e: LiftFlowOfControlException => {
-                  success = true
+                  success = !S.exceptionThrown_?
                   throw e
                 }
               }
@@ -396,9 +398,9 @@ trait DB extends Loggable {
           case x => x.toString
         }
 
-      case BIGINT | INTEGER | /* DECIMAL | NUMERIC | */ SMALLINT | TINYINT => rs.getLong(pos).toString
+      case BIGINT | INTEGER | /* DECIMAL | NUMERIC | */ SMALLINT | TINYINT => checkNull(rs, pos, rs.getLong(pos).toString)
 
-      case BIT | BOOLEAN => rs.getBoolean(pos).toString
+      case BIT | BOOLEAN => checkNull(rs, pos, rs.getBoolean(pos).toString)
 
       case VARCHAR | CHAR | CLOB | LONGVARCHAR => rs.getString(pos)
 
@@ -407,8 +409,16 @@ trait DB extends Loggable {
         case x => x.toString
       }
 
-      case DOUBLE | FLOAT | REAL => rs.getDouble(pos).toString
+      case DOUBLE | FLOAT | REAL => checkNull(rs, pos, rs.getDouble(pos).toString)
     }
+  }
+
+  /*
+   If the column is null, return null rather than the boxed primitive
+   */
+  def checkNull[T](rs: ResultSet, pos: Int, res: => T): T = {
+    if (null eq rs.getObject(pos)) null.asInstanceOf[T]
+    else res
   }
 
   private def asAny(pos: Int, rs: ResultSet, md: ResultSetMetaData): Any = {
@@ -418,15 +428,15 @@ trait DB extends Loggable {
 
       case DECIMAL | NUMERIC => rs.getBigDecimal(pos)
 
-      case BIGINT | INTEGER | /* DECIMAL | NUMERIC | */ SMALLINT | TINYINT => rs.getLong(pos)
+      case BIGINT | INTEGER | /* DECIMAL | NUMERIC | */ SMALLINT | TINYINT => checkNull(rs, pos, rs.getLong(pos))
 
-      case BIT | BOOLEAN => rs.getBoolean(pos)
+      case BIT | BOOLEAN => checkNull(rs, pos, rs.getBoolean(pos))
 
       case VARCHAR | CHAR | CLOB | LONGVARCHAR => rs.getString(pos)
 
       case DATE | TIME | TIMESTAMP => rs.getTimestamp(pos)
 
-      case DOUBLE | FLOAT | REAL => rs.getDouble(pos)
+      case DOUBLE | FLOAT | REAL => checkNull(rs, pos, rs.getDouble(pos))
     }
   }
 
@@ -668,13 +678,13 @@ trait DB extends Loggable {
       var rollback = true
       try {
         val ret = f(conn)
-        rollback = false
+        rollback = S.exceptionThrown_?
         ret
       } catch {
         // this is the case when we want to commit the transaction
         // but continue to throw the exception
         case e: LiftFlowOfControlException => {
-          rollback = false
+          rollback = S.exceptionThrown_?
           throw e
         }
       } finally {

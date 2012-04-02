@@ -434,7 +434,7 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
       url <- Box !! LiftRules.getClass.getResource("/" + cn + ".class")
       val newUrl = new java.net.URL(url.toExternalForm.split("!")(0) + "!" + "/META-INF/MANIFEST.MF")
       str <- tryo(new String(readWholeStream(newUrl.openConnection.getInputStream), "UTF-8"))
-      ma <- """Build-Time: (.*)""".r.findFirstMatchIn(str)
+      ma <- """Built-Time: (.*)""".r.findFirstMatchIn(str)
       asLong <- asLong(ma.group(1))
     } yield new Date(asLong)
 
@@ -457,8 +457,6 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
 
   /**
    * Set the doc type used.  Use the HtmlProperties
-   *
-   * @deprecated
    */
   @deprecated("Use the HtmlProperties")
   val docType: FactoryMaker[Req => Box[String]] = new FactoryMaker( (r: Req) => r  match {
@@ -577,7 +575,7 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
         groupEffects(NoticeType.Error)
     }
 
-    // We need to determine the full set of IDs that need messages rendered. 
+    // We need to determine the full set of IDs that need messages rendered.
     // TODO: Change to use "distinct" when 2.7.7 support is dropped
     val idSet = (S.idMessages((S.errors)) ++
                  S.idMessages((S.warnings)) ++
@@ -956,9 +954,32 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
 
   /**
    * Holds user's DispatchPF functions that will be executed in a stateless context. This means that
-   * S object is not availble yet.
+   * no session will be created and no JSESSIONID cookie will be presented to the user (unless
+   * the user has presented a JSESSIONID cookie).
    */
-  val statelessDispatchTable = RulesSeq[DispatchPF]
+  @scala.deprecated("Use statelessDispatch")
+  def statelessDispatchTable = statelessDispatch
+
+  /**
+   * Holds user's DispatchPF functions that will be executed in a stateless context. This means that
+   * no session will be created and no JSESSIONID cookie will be presented to the user (unless
+   * the user has presented a JSESSIONID cookie).
+   *
+   * This is the way to do stateless REST in Lift
+   */
+  val statelessDispatch = RulesSeq[DispatchPF]
+
+  /**
+   * Add functionality around all of the HTTP request/response cycle.
+   * This is an optimal place to get a database connection.  Note that whatever
+   * is loaned at the begining of the request will not be returned until the end
+   * of the request.  It's super-important to (1) not do anything related
+   * to state or touch the request objects or anything else at the begining or
+   * end of the loan wrapper phase; (2) make sure that your code does not throw
+   * exceptions as exceptions can cause major problems.
+   */
+  val allAround = RulesSeq[LoanWrapper]
+
 
   private[http] def dispatchTable(req: HTTPRequest): List[DispatchPF] = {
     req match {
@@ -1276,7 +1297,7 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
    * a default implementation is already appended.
    *
    */
-  @volatile var exceptionHandler = RulesSeq[ExceptionHandlerPF].append {
+  val exceptionHandler = RulesSeq[ExceptionHandlerPF].append {
     case (Props.RunModes.Development, r, e) =>
       logger.error("Exception being returned to browser when processing " + r.uri.toString + ": " + showException(e))
       XhtmlResponse((<html> <body>Exception occured while processing {r.uri}<pre>{showException(e)}</pre> </body> </html>), S.htmlProperties.docType, List("Content-Type" -> "text/html; charset=utf-8"), Nil, 500, S.ieMode)
@@ -1664,7 +1685,7 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
       Map("CSS" -> CSS, "Msgs" -> Msgs, "Msg" -> Msg,
         "Menu" -> Menu, "css" -> CSS, "msgs" -> Msgs, "msg" -> Msg,
         "menu" -> Menu,
-        "a" -> A, "children" -> Children,
+        "children" -> Children,
         "comet" -> Comet, "form" -> Form, "ignore" -> Ignore, "loc" -> Loc,
         "surround" -> Surround,
         "test_cond" -> TestCond,
@@ -1772,7 +1793,7 @@ class RulesSeq[T] {
   })(f)
   }
 
-  def toList = cur.value match {
+  def toList: List[T] = cur.value match {
     case null => rules
     case xs => xs
   }

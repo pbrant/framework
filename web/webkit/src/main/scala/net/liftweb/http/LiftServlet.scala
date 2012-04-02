@@ -258,7 +258,7 @@ class LiftServlet extends Loggable {
       // if the request is matched is defined in the stateless table, dispatch
       if (S.statelessInit(req) {
         tmpStatelessHolder = NamedPF.applyBox(req,
-          LiftRules.statelessDispatchTable.toList).map(_.apply() match {
+          LiftRules.statelessDispatch.toList).map(_.apply() match {
           case Full(a) => Full(LiftRules.convertResponse((a, Nil, S.responseCookies, req)))
           case r => r
         });
@@ -294,6 +294,7 @@ class LiftServlet extends Loggable {
       case foc: LiftFlowOfControlException => throw foc
       case e: Exception if !e.getClass.getName.endsWith("RetryRequest") => {
         val bundle = (Props.mode, req, e)
+        S.assertExceptionThrown()
         NamedPF.applyBox(bundle, LiftRules.exceptionHandler.toList)
       }
     }
@@ -328,7 +329,6 @@ class LiftServlet extends Loggable {
           LiftSession.onBeginServicing.foreach(_(liftSession, req))
           val ret: (Boolean, Box[LiftResponse]) =
             try {
-              try {
                 // run the continuation in the new session
                 // if there is a continuation
                 continuation match {
@@ -353,25 +353,10 @@ class LiftServlet extends Loggable {
                       (true, Full(liftSession.checkRedirect(req.createNotFound(f))))
                   }
                 }
-              } catch {
-                case ContinueResponseException(cre) => throw cre
-
-                case ite: java.lang.reflect.InvocationTargetException if (ite.getCause.isInstanceOf[ResponseShortcutException]) =>
-                  (true, Full(liftSession.handleRedirect(ite.getCause.asInstanceOf[ResponseShortcutException], req)))
-
-                case rd: net.liftweb.http.ResponseShortcutException => (true, Full(liftSession.handleRedirect(rd, req)))
-
-                case e if (e.getClass.getName.endsWith("RetryRequest")) => throw e
-
-                case e: LiftFlowOfControlException => throw e
-
-                case e => (true, NamedPF.applyBox((Props.mode, req, e), LiftRules.exceptionHandler.toList))
-
-              }
 
             } finally {
               if (S.functionMap.size > 0) {
-                liftSession.updateFunctionMap(S.functionMap, S.uri, millis)
+                liftSession.updateFunctionMap(S.functionMap, S.renderVersion, millis)
                 S.clearFunctionMap
               }
               liftSession.notices = S.getNotices
@@ -429,73 +414,76 @@ class LiftServlet extends Loggable {
                          requestState: Req): Box[LiftResponse] = {
     extractVersion(requestState.path.partPath) {
 
-    LiftRules.cometLogger.debug("AJAX Request: " + liftSession.uniqueId + " " + requestState.params)
-    tryo {
-      LiftSession.onBeginServicing.foreach(_(liftSession, requestState))
-    }
+      LiftRules.cometLogger.debug("AJAX Request: " + liftSession.uniqueId + " " + requestState.params)
+      tryo {
+        LiftSession.onBeginServicing.foreach(_(liftSession, requestState))
+      }
 
-    val ret = try {
-      requestState.param("__lift__GC") match {
-        case Full(_) =>
-          liftSession.updateFuncByOwner(RenderVersion.get, millis)
-          Full(JavaScriptResponse(js.JsCmds.Noop))
+      val ret = try {
+        requestState.param("__lift__GC") match {
+          case Full(_) =>
+            liftSession.updateFuncByOwner(RenderVersion.get, millis)
+            Full(JavaScriptResponse(js.JsCmds.Noop))
 
-        case _ =>
-          try {
-            val what = flatten(try {
-              liftSession.runParams(requestState)
-            } catch {
-              case ResponseShortcutException(_, Full(to), _) =>
-                import js.JsCmds._
-                List(RedirectTo(to))
-            })
+          case _ =>
+            try {
+              val what = flatten(try {
+                liftSession.runParams(requestState)
+              } catch {
+                case ResponseShortcutException(_, Full(to), _) =>
+                  import js.JsCmds._
+                  List(RedirectTo(to))
+              })
 
-            val what2 = what.flatMap {
-              case js: JsCmd => List(js)
-              case jv: JValue => List(jv)
-              case n: NodeSeq => List(n)
-              case js: JsCommands => List(js)
-              case r: LiftResponse => List(r)
-              case s => Nil
-            }
-
-            val ret: LiftResponse = what2 match {
-              case (json: JsObj) :: Nil => JsonResponse(json)
-              case (jv: JValue) :: Nil => JsonResponse(jv)
-              case (js: JsCmd) :: xs => {
-                (JsCommands(S.noticesToJsCmd :: Nil) &
-                  ((js :: xs).flatMap {
-                    case js: JsCmd => List(js)
-                    case _ => Nil
-                  }.reverse) &
-                  S.jsToAppend).toResponse
+              val what2 = what.flatMap {
+                case js: JsCmd => List(js)
+                case jv: JValue => List(jv)
+                case n: NodeSeq => List(n)
+                case js: JsCommands => List(js)
+                case r: LiftResponse => List(r)
+                case s => Nil
               }
 
-              case (n: Node) :: _ => XmlResponse(n)
-              case (ns: NodeSeq) :: _ => XmlResponse(Group(ns))
-              case (r: LiftResponse) :: _ => r
-              case _ => JsCommands(S.noticesToJsCmd :: JsCmds.Noop :: S.jsToAppend).toResponse
+              val ret: LiftResponse = what2 match {
+                case (json: JsObj) :: Nil => JsonResponse(json)
+                case (jv: JValue) :: Nil => JsonResponse(jv)
+                case (js: JsCmd) :: xs => {
+                  (JsCommands(S.noticesToJsCmd :: Nil) &
+                    ((js :: xs).flatMap {
+                      case js: JsCmd => List(js)
+                      case _ => Nil
+                    }.reverse) &
+                    S.jsToAppend).toResponse
+                }
+
+                case (n: Node) :: _ => XmlResponse(n)
+                case (ns: NodeSeq) :: _ => XmlResponse(Group(ns))
+                case (r: LiftResponse) :: _ => r
+                case _ => JsCommands(S.noticesToJsCmd :: JsCmds.Noop :: S.jsToAppend).toResponse
+              }
+
+              LiftRules.cometLogger.debug("AJAX Response: " + liftSession.uniqueId + " " + ret)
+
+              Full(ret)
+            } finally {
+              if (S.functionMap.size > 0) {
+                liftSession.updateFunctionMap(S.functionMap, RenderVersion.get, millis)
+                S.clearFunctionMap
+              }
             }
-
-            LiftRules.cometLogger.debug("AJAX Response: " + liftSession.uniqueId + " " + ret)
-
-            Full(ret)
-          } finally {
-            liftSession.updateFunctionMap(S.functionMap, RenderVersion.get, millis)
-          }
+        }
+      } catch {
+        case foc: LiftFlowOfControlException => throw foc
+        case e => S.assertExceptionThrown() ; NamedPF.applyBox((Props.mode, requestState, e), LiftRules.exceptionHandler.toList);
       }
-    } catch {
-      case foc: LiftFlowOfControlException => throw foc
-      case e => NamedPF.applyBox((Props.mode, requestState, e), LiftRules.exceptionHandler.toList);
-    }
-    tryo {
-      LiftSession.onEndServicing.foreach(_(liftSession, requestState, ret))
-    }
-    ret
+      tryo {
+        LiftSession.onEndServicing.foreach(_(liftSession, requestState, ret))
+      }
+      ret
     }
   }
 
-  /**
+/**
    * An actor that manages continuations from container (Jetty style)
    */
   class ContinuationActor(request: Req, session: LiftSession,
