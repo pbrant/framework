@@ -32,7 +32,7 @@ trait CssBoundLiftScreen extends LiftScreen with CssBoundScreen {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
-  protected object LocalActionName extends ScreenVar[String](Helpers.nextFuncName) {
+  protected object LocalActionRef extends ScreenVar[String](S.fmapFunc(setLocalAction _)(s => s)) {
     override lazy val __nameSalt = Helpers.nextFuncName
   }
 
@@ -50,6 +50,7 @@ trait CssBoundLiftScreen extends LiftScreen with CssBoundScreen {
 
   override def localSetup() {
     SavedDefaultXml.get
+    LocalActionRef.get
   }
 
   override def allTemplate = SavedDefaultXml.get

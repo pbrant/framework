@@ -37,16 +37,14 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
 
   protected lazy val cssClassBinding = new CssClassBinding
 
+  protected val LocalActionRef: AnyVar[String, _]
   protected val LocalAction: AnyVar[String, _]
+  protected val LocalActions: AnyVar[Map[String, () => JsCmd], _]
 
   val NextId: AnyVar[String, _]
 
   protected val PrevId: AnyVar[Box[String], _]
   protected val CancelId: AnyVar[String, _]
-
-  protected val LocalActionName: AnyVar[String, _]
-
-  protected val LocalActions: AnyVar[Map[String, () => JsCmd], _]
 
   protected def additionalFormBindings: Box[CssSel] = Empty
 
@@ -93,9 +91,7 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
   protected def bindLocalAction(selector: String, func: () => JsCmd): CssSel = {
     mapLocalAction(func)(name =>
       selector #> (
-        JE.JsFunc((JqId(JE.Str(LocalActionName.get)) ~> JE.JsVal("val")).toJsCmd, JE.Str(name)).cmd &
-        SHtml.makeAjaxCall(LiftRules.jsArtifacts.serialize(NextId.get)).cmd &
-        JE.JsFunc((JqId(JE.Str(LocalActionName.get)) ~> JE.JsVal("val")).toJsCmd, JE.Str("")).cmd
+        SHtml.makeAjaxCall(LiftRules.jsArtifacts.serialize(NextId.get) + ("&" + LocalActionRef.get + "=" + name)).cmd
       ).toJsCmd)
   }
 
@@ -103,6 +99,12 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
     val name = randomString(20)
     LocalActions.set(LocalActions.is + (name -> func))
     f(name)
+  }
+
+  protected def setLocalAction(s: String) {
+    logger.debug("Setting LocalAction (%s) to %s".format(
+      Integer.toString(System.identityHashCode(LocalAction), 16), s))
+    LocalAction.set(s)
   }
 
   override protected def renderAll(currentScreenNumber: Box[NodeSeq],
@@ -127,18 +129,6 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
     NextId.set(nextId._1)
     PrevId.set(prevId map (_._1))
     CancelId.set(cancelId._1)
-
-    def createLocalActionField(): NodeSeq = {
-      val hiddenField = SHtml.hidden({ s =>
-          logger.debug("Setting LocalAction (%s) to %s".format(
-            Integer.toString(System.identityHashCode(LocalAction), 16), s))
-          LocalAction.set(s) },
-        "")
-
-      hiddenField % ("id" -> LocalActionName.get)
-    }
-
-    val localActionField = createLocalActionField()
 
     val notices: List[(NoticeType.Value, NodeSeq, Box[String])] = S.getAllNotices
 
@@ -257,7 +247,7 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
       val ret =
         (<form id={nextId._1} action={url}
                method="post">{S.formGroup(-1)(SHtml.hidden(() =>
-          snapshot.restore()))}{localActionField}{fields}{
+          snapshot.restore()))}{fields}{
           S.formGroup(4)(
             SHtml.hidden(() =>
             {val res = nextId._2();
