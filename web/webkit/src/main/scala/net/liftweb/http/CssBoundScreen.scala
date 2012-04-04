@@ -239,6 +239,9 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
     def bindFieldsWithAdditional(xhtml: NodeSeq) =
       (savAdditionalFormBindings map (bindFields & _) openOr (bindFields))(xhtml)
 
+    def liftScreenAttr(s: String) =
+      new UnprefixedAttribute("data-lift-screen-control", Text(s), Null)
+
     def bindForm(xhtml: NodeSeq): NodeSeq = {
       val fields = bindFieldsWithAdditional(xhtml)
 
@@ -247,7 +250,7 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
       val ret =
         (<form id={nextId._1} action={url}
                method="post">{S.formGroup(-1)(SHtml.hidden(() =>
-          snapshot.restore()))}{fields}{
+          snapshot.restore()) % liftScreenAttr("restoreAction"))}{fields}{
           S.formGroup(4)(
             SHtml.hidden(() =>
             {val res = nextId._2();
@@ -257,7 +260,7 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
                   localSnapshot.restore
                 })}
               res
-            }))}</form> %
+            })) % liftScreenAttr("nextAction") }</form> %
           theScreen.additionalAttributes) ++
           prevId.toList.map{case (id, func) =>
             <form id={id} action={url} method="post">{
@@ -268,7 +271,7 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
                   S.seeOther(url, () => localSnapshot.restore)
                 }
                 res
-              })}</form>
+              }) % liftScreenAttr("restoreAction")}</form>
           } ++
           <form id={cancelId._1} action={url} method="post">{SHtml.hidden(() => {
             snapshot.restore();
@@ -277,7 +280,7 @@ trait CssBoundScreen extends ScreenWizardRendered with Loggable {
               S.seeOther(Referer.get)
             }
             res
-          })}</form>
+          }) % liftScreenAttr("restoreAction")}</form>
 
       if (ajax_?) {
         SHtml.makeFormsAjax(ret)
