@@ -2,7 +2,7 @@ import Dependencies._
 
 organization in ThisBuild          := "net.liftweb"
 
-version in ThisBuild               := "2.5-SNAPSHOT"
+version in ThisBuild               := "2.5-SNAPSHOT-ccaplocal"
 
 homepage in ThisBuild              := Some(url("http://www.liftweb.net"))
 
@@ -19,12 +19,21 @@ libraryDependencies in ThisBuild <++= scalaVersion { sv => Seq(specs, scalacheck
 // Settings for Sonatype compliance
 pomIncludeRepository in ThisBuild  := { _ => false }
 
-publishTo in ThisBuild            <<= isSnapshot(if (_) Some(Opts.resolver.sonatypeSnapshots) else Some(Opts.resolver.sonatypeStaging))
+//publishTo in ThisBuild            <<= isSnapshot(if (_) Some(Opts.resolver.sonatypeSnapshots) else Some(Opts.resolver.sonatypeStaging))
+publishTo in ThisBuild <<= (version) { version: String =>
+  val repo =
+    if (version.trim.endsWith("SNAPSHOT"))
+      "CCAP Snapshots" at "http://artifactory.ci.wicourts.gov/libs-snapshots-local"
+    else
+      "CCAP Releases" at "http://artifactory.ci.wicourts.gov/libs-releases-local"
+  Some(repo)
+}
 
 scmInfo in ThisBuild               := Some(ScmInfo(url("https://github.com/lift/framework"), "scm:git:https://github.com/lift/framework.git"))
 
 pomExtra in ThisBuild              ~= (_ ++ {Developers.toXml})
 
-credentials in ThisBuild <+= state map { s => Credentials(BuildPaths.getGlobalSettingsDirectory(s, BuildPaths.getGlobalBase(s)) / ".credentials") }
+//credentials in ThisBuild <+= state map { s => Credentials(BuildPaths.getGlobalSettingsDirectory(s, BuildPaths.getGlobalBase(s)) / ".credentials") }
+credentials in ThisBuild += Credentials(Path.userHome / ".ccap_artifactory_credentials")
 
 initialize <<= (name, version, scalaVersion) apply printLogo
