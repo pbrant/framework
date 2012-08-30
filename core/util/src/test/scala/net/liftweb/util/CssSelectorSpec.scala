@@ -17,16 +17,16 @@
 package net.liftweb
 package util
 
-import org.specs.Specification
+import org.specs2.mutable.Specification
 
 import common._
-import BindHelpers._
 
 
 /**
  * Systems under specification for CSS Selector.
  */
-object CssSelectorSpec extends Specification("CSS Selector Specification")  {
+object CssSelectorSpec extends Specification   {
+  "CSS Selector Specification".title
 
   "CssSelector" should {
     "fail for garbage input" in {
@@ -38,7 +38,7 @@ object CssSelectorSpec extends Specification("CSS Selector Specification")  {
     }
 
     "a selector with cruft at the end must fail" in {
-      CssSelectorParser.parse("#foo I like yaks").isDefined must_== false
+      CssSelectorParser.parse("#foo I li**ke yaks").isDefined must_== false
     }
 
     ":yak must not parse" in {
@@ -49,6 +49,7 @@ object CssSelectorSpec extends Specification("CSS Selector Specification")  {
       CssSelectorParser.parse(":button").open_! must_== 
       AttrSelector("type", "button", Empty)
     }
+
 
     ":checkbox must  parse" in {
       CssSelectorParser.parse(":checkbox").open_! must_== 
@@ -115,8 +116,6 @@ object CssSelectorSpec extends Specification("CSS Selector Specification")  {
       IdSelector("foo", Full(AttrRemoveSubNode("woof")))
     }
 
-
-
     "select attr/val pair" in {
       CssSelectorParser.parse("frog=dog") must_==
       Full(AttrSelector("frog", "dog", Empty))
@@ -151,7 +150,12 @@ object CssSelectorSpec extends Specification("CSS Selector Specification")  {
 
     "select name/val pair" in {
       CssSelectorParser.parse("@dog -*") must_==
-      Full(NameSelector("dog", Full(PrependKidsSubNode())))
+        Full(NameSelector("dog", Full(PrependKidsSubNode())))
+    }
+
+    "select name/val pair surround" in {
+      CssSelectorParser.parse("@dog <*>") must_==
+        Full(NameSelector("dog", Full(SurroundKids())))
     }
 
     "select name/val pair" in {
@@ -199,6 +203,23 @@ object CssSelectorSpec extends Specification("CSS Selector Specification")  {
       CssSelectorParser.parse(".foo  [woof] ").open_! must_== 
       ClassSelector("foo", Full(AttrSubNode("woof")))
     }
+
+    "select multiple depth" in {
+      CssSelectorParser.parse("div .foo [woof] ").open_! must_==
+        EnclosedSelector(ElemSelector("div", Empty), ClassSelector("foo", Full(AttrSubNode("woof"))))
+    }
+
+    "select multiple depth with star" in {
+      CssSelectorParser.parse("div .foo * ").open_! must_==
+        EnclosedSelector(ElemSelector("div", Empty), ClassSelector("foo", Full(KidsSubNode())))
+    }
+
+    "select multiple super depth with star" in {
+      CssSelectorParser.parse("span div .foo * ").open_! must_==
+        EnclosedSelector(ElemSelector("span", Empty), EnclosedSelector(ElemSelector("div", Empty), ClassSelector("foo", Full(KidsSubNode()))))
+    }
+
+
   }
 
 }

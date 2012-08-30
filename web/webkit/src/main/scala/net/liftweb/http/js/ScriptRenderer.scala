@@ -107,9 +107,13 @@ object ScriptRenderer {
     "POST",
     LiftRules.ajaxPostTimeout,
     false, "script",
-    Full("liftAjax.lift_successRegisterGC"), Full("liftAjax.lift_failRegisterGC"))) +
-          """
+    Full("liftAjax.lift_successRegisterGC"), Full("liftAjax.lift_failRegisterGC"), false)) + """
        },
+
+
+      lift_sessionLost: function() {
+        location.reload();
+      },
 
        lift_doAjaxCycle: function() {
          if (liftAjax.lift_doCycleQueueCnt > 0) liftAjax.lift_doCycleQueueCnt--;
@@ -127,6 +131,7 @@ object ScriptRenderer {
                  aboutToSend.onSuccess(data);
                }
                liftAjax.lift_doCycleQueueCnt++;
+               liftAjax.lift_ajaxVersion++;
                liftAjax.lift_doAjaxCycle();
              };
 
@@ -140,6 +145,7 @@ object ScriptRenderer {
                  queue.push(aboutToSend);
                  liftAjax.lift_ajaxQueueSort();
                } else {
+                 liftAjax.lift_ajaxVersion++;
                  if (aboutToSend.onFailure) {
                    aboutToSend.onFailure();
                  } else {
@@ -158,6 +164,7 @@ object ScriptRenderer {
                var theData = aboutToSend.theData;
                if (liftAjax.lift_uriSuffix) {
                  theData += '&' + liftAjax.lift_uriSuffix;
+                 aboutToSend.theData = theData;
                  liftAjax.lift_uriSuffix = undefined;
                }
                liftAjax.lift_actualAjaxCall(theData, successFunc, failureFunc);
@@ -173,6 +180,18 @@ object ScriptRenderer {
          liftAjax.lift_doCycleQueueCnt++;
          setTimeout("liftAjax.lift_doAjaxCycle();", 200);
        },
+
+       lift_ajaxVersion: 0,
+
+       addPageNameAndVersion: function(url) {
+         return """ + {
+    if (LiftRules.enableLiftGC) {
+      "url.replace('" + LiftRules.ajaxPath + "', '" + LiftRules.ajaxPath + "/'+lift_page+('-'+liftAjax.lift_ajaxVersion%36).toString(36));"
+    } else {
+      "url;"
+    }
+  } + """
+    },
 
        addPageName: function(url) {
          return """ + {
@@ -190,7 +209,7 @@ object ScriptRenderer {
             "POST",
             LiftRules.ajaxPostTimeout,
             false, "script",
-            Full("onSuccess"), Full("onFailure"))) +
+            Full("onSuccess"), Full("onFailure"), true)) +
           """
         },
 
@@ -200,7 +219,7 @@ object ScriptRenderer {
             "POST",
             LiftRules.ajaxPostTimeout,
             false, "json",
-            Full("onSuccess"), Full("onFailure"))) +
+            Full("onSuccess"), Full("onFailure"), true)) +
           """
               }
             };
@@ -251,6 +270,17 @@ object ScriptRenderer {
         setTimeout("liftComet.lift_cometEntry();",""" + LiftRules.cometFailureRetryTimeout + """);
       },
 
+
+      lift_cometError: function(e) {
+        if (console && typeof console.error == 'function')
+          console.error(e.stack || e);
+        throw e;
+      },
+
+      lift_sessionLost: function() { """ +
+        JsCmds.RedirectTo(LiftRules.noCometSessionPage).toJsCmd +
+      """},
+
       lift_cometEntry: function() {
         var isEmpty = function(){for (var i in lift_toWatch) {return false} return true}();
         if (!isEmpty) {
@@ -262,7 +292,7 @@ object ScriptRenderer {
             false,
             "script",
             Full("liftComet.lift_handlerSuccessFunc"),
-            Full("liftComet.lift_handlerFailureFunc"))) +
+            Full("liftComet.lift_handlerFailureFunc"), false)) +
           """
               }
             }

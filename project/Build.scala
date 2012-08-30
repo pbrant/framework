@@ -70,7 +70,7 @@ object BuildDef extends Build {
         .dependsOn(actor, json)
         .settings(description := "Utilities Library",
                   parallelExecution in Test := false,
-                  libraryDependencies ++= Seq(joda_time, commons_codec, javamail, log4j, htmlparser))
+                  libraryDependencies <++= scalaVersion {sv =>  Seq(scala_compiler(sv), joda_time, commons_codec, javamail, log4j, htmlparser)})
 
 
   // Web Projects
@@ -87,10 +87,11 @@ object BuildDef extends Build {
   lazy val webkit =
     webProject("webkit")
         .dependsOn(util, testkit % "provided")
+        .settings(yuiCompressor.Plugin.yuiSettings: _*)
         .settings(description := "Webkit Library",
                   parallelExecution in Test := false,
                   libraryDependencies <++= scalaVersion { sv =>
-                    Seq(commons_fileupload, servlet_api, specs(sv).copy(configurations = Some("provided")), jetty6, jwebunit)
+                    Seq(commons_fileupload, servlet_api, specs2.copy(configurations = Some("provided")), jetty6, jwebunit)
                   },
                   initialize in Test <<= (sourceDirectory in Test) { src =>
                     System.setProperty("net.liftweb.webapptest.src.test.webapp", (src / "webapp").absString)
@@ -133,12 +134,13 @@ object BuildDef extends Build {
 
   lazy val record =
     persistenceProject("record")
-        .dependsOn(proto, db)
+        .dependsOn(proto)
 
   lazy val couchdb =
     persistenceProject("couchdb")
         .dependsOn(record)
-        .settings(libraryDependencies += dispatch_http)
+        .settings(libraryDependencies += dispatch_http,
+                  parallelExecution in Test := false)
 
   lazy val squeryl_record =
     persistenceProject("squeryl-record")
@@ -147,7 +149,7 @@ object BuildDef extends Build {
 
   lazy val mongodb =
     persistenceProject("mongodb")
-        .dependsOn(json_ext)
+        .dependsOn(json_ext, util)
         .settings(parallelExecution in Test := false,
                   libraryDependencies += mongo_driver,
                   initialize in Test <<= (resourceDirectory in Test) { rd =>

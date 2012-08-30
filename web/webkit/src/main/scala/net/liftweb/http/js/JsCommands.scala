@@ -188,7 +188,7 @@ trait JsExp extends HtmlFixer with ToJsCmd {
    * This exists for backward compatibility reasons for JQueryLeft and JQueryRight
    * which are now deprecated. Use ~> whenever possible as this will be removed soon.
    */
-  @deprecated("Use `~>` instead")
+  @deprecated("Use `~>` instead", "2.3")
   def >>(right: JsMember): JsExp = ~>(right)
 
 
@@ -553,7 +553,7 @@ trait HtmlFixer {
    * This method must be run in the context of the thing creating the XHTML
    * to capture the bound functions
    */
-  @deprecated("Use fixHtmlAndJs or fixHtmlFunc")
+  @deprecated("Use fixHtmlAndJs or fixHtmlFunc", "2.4")
   protected def fixHtml(uid: String, content: NodeSeq): String = {
     val w = new java.io.StringWriter
 
@@ -613,7 +613,7 @@ trait HtmlFixer {
     import scala.collection.mutable.ListBuffer
     val lb = new ListBuffer[JsCmd]
 
-    val revised = ("script" #> ((ns: NodeSeq) => {
+    val revised = ("script" #> nsFunc(ns => {
       ns match {
         case FindScript(e) => {
           lb += JE.JsRaw(ns.text).cmd
@@ -621,7 +621,7 @@ trait HtmlFixer {
         }
         case x => x
       }
-    }))(xhtml)
+    })).apply(xhtml)
 
     S.htmlProperties.htmlWriter(Group(revised), w)
 
@@ -790,19 +790,20 @@ object JsCmds {
   implicit def jsExpToJsCmd(in: JsExp) = in.cmd
 
   case class CmdPair(left: JsCmd, right: JsCmd) extends JsCmd {
-    def toJsCmd = {
-      val sb = new StringBuilder
-      append(sb, this)
-      sb.toString
+    import scala.collection.mutable.ListBuffer;
+
+    def toJsCmd: String = {
+      val acc = new ListBuffer[JsCmd]()
+      appendDo(acc, left :: right :: Nil)
+      acc.map(_.toJsCmd).mkString("\n")
     }
 
-    private def append(sb: StringBuilder, cmd: JsCmd) {
-      cmd match {
-        case CmdPair(l, r) => append(sb, l)
-          sb.append('\n')
-          append(sb, r)
-
-        case c => sb.append(c.toJsCmd)
+    @scala.annotation.tailrec
+    private def appendDo(acc: ListBuffer[JsCmd], cmds: List[JsCmd]) {
+      cmds match {
+        case Nil =>
+        case CmdPair(l, r) :: rest => appendDo(acc, l :: r :: rest)
+        case a :: rest => acc.append(a); appendDo(acc, rest)
       }
     }
   }

@@ -255,6 +255,7 @@ trait TimeHelpers { self: ControlHelpers =>
     /** @return a Date object starting at 00:00 from date */
     def noTime = {
       val calendar = Calendar.getInstance
+      calendar.setTime(date)
       calendar.set(Calendar.HOUR_OF_DAY, 0)
       calendar.set(Calendar.MINUTE, 0)
       calendar.set(Calendar.SECOND, 0)
@@ -294,9 +295,9 @@ trait TimeHelpers { self: ControlHelpers =>
   def currentYear: Int = Calendar.getInstance.get(Calendar.YEAR)
 
   /**
-   * @deprecated use now instead
    * @return the current time as a Date object
    */
+  @deprecated("use now instead", "2.4")
   def timeNow = new Date
 
   /**

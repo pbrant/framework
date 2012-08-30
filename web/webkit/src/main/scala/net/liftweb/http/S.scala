@@ -127,8 +127,7 @@ object S extends S {
   /**
    *  Impersonates a function that will be called when uploading files
    */
-  @serializable
-  private final class BinFuncHolder(val func: FileParamHolder => Any, val owner: Box[String]) extends AFuncHolder {
+  private final class BinFuncHolder(val func: FileParamHolder => Any, val owner: Box[String]) extends AFuncHolder with Serializable{
     def apply(in: List[String]) {logger.info("You attempted to call a 'File Upload' function with a normal parameter.  Did you forget to 'enctype' to 'multipart/form-data'?")}
 
     override def apply(in: FileParamHolder) = func(in)
@@ -152,8 +151,7 @@ object S extends S {
    * Impersonates a function that is executed on HTTP requests from client. The function
    * takes a String as the only parameter and returns an Any.
    */
-  @serializable
-  private final class SFuncHolder(val func: String => Any, val owner: Box[String]) extends AFuncHolder {
+  private final class SFuncHolder(val func: String => Any, val owner: Box[String]) extends AFuncHolder with Serializable{
     def this(func: String => Any) = this (func, Empty)
 
     def apply(in: List[String]): Any = in.headOption.toList.map(func(_))
@@ -169,8 +167,7 @@ object S extends S {
    * Impersonates a function that is executed on HTTP requests from client. The function
    * takes a List[String] as the only parameter and returns an Any.
    */
-  @serializable
-  private final class LFuncHolder(val func: List[String] => Any, val owner: Box[String]) extends AFuncHolder {
+  private final class LFuncHolder(val func: List[String] => Any, val owner: Box[String]) extends AFuncHolder with Serializable {
     def apply(in: List[String]): Any = func(in)
   }
 
@@ -184,16 +181,14 @@ object S extends S {
    * Impersonates a function that is executed on HTTP requests from client. The function
    * takes zero arguments and returns an Any.
    */
-  @serializable
-  private final class NFuncHolder(val func: () => Any, val owner: Box[String]) extends AFuncHolder {
+  private final class NFuncHolder(val func: () => Any, val owner: Box[String]) extends AFuncHolder with Serializable{
     def apply(in: List[String]): Any = in.headOption.toList.map(s => func())
   }
 
   /**
    * Abstrats a function that is executed on HTTP requests from client.
    */
-  @serializable
-  sealed trait AFuncHolder extends Function1[List[String], Any] {
+  sealed trait AFuncHolder extends Function1[List[String], Any] with Serializable{
     def owner: Box[String]
 
     def apply(in: List[String]): Any
@@ -386,7 +381,10 @@ trait S extends HasParams with Loggable {
 
   private[http] object CurrentLocation extends RequestVar[Box[sitemap.Loc[_]]](request.flatMap(_.location))
 
-  def location: Box[sitemap.Loc[_]] = CurrentLocation.is
+  def location: Box[sitemap.Loc[_]] = CurrentLocation.is or {
+    //try again in case CurrentLocation was accessed before the request was available
+    request flatMap { r => CurrentLocation(r.location) }
+  }
 
 
   /**
@@ -922,11 +920,13 @@ trait S extends HasParams with Loggable {
   /**
    * Get a List of the resource bundles for the current locale. The resource bundles are defined by
    * the LiftRules.resourceNames and LiftRules.resourceBundleFactories variables.
+   * If you do not define an entry for a particular key, we fall back to using
+   * Lift's core entries.
    *
    * @see LiftRules.resourceNames
    * @see LiftRules.resourceBundleFactories
    */
-  def resourceBundles: List[ResourceBundle] = resourceBundles(locale)
+  def resourceBundles: List[ResourceBundle] = resourceBundles(locale) ++ liftCoreResourceBundle.toList
 
   def resourceBundles(loc: Locale): List[ResourceBundle] = {
     _resBundle.box match {
@@ -969,6 +969,8 @@ trait S extends HasParams with Loggable {
 
   /**
    * Get a localized string or return the original string.
+   * We first try your own bundle resources, if that fails, we try
+   * Lift's core bundle.
    *
    * @param str the string to localize
    *
@@ -980,6 +982,8 @@ trait S extends HasParams with Loggable {
 
   /**
    * Get a localized string or return the original string.
+   * We first try your own bundle resources, if that fails, we try
+   * Lift's core bundle.
    *
    * @param str the string to localize
    *
@@ -993,6 +997,8 @@ trait S extends HasParams with Loggable {
   /**
    * Attempt to localize and then format the given string. This uses the String.format method
    * to format the localized string.
+   * We first try your own bundle resources, if that fails, we try
+   * Lift's core bundle.
    *
    * @param str the string to localize
    * @param params the var-arg parameters applied for string formatting
@@ -1015,7 +1021,8 @@ trait S extends HasParams with Loggable {
    *
    * @return the localized version of the string
    */
-  def ??(str: String): String = ?!(str, liftCoreResourceBundle.toList)
+  @deprecated("Use S.?() instead. S.?? will be removed in 2.6", "2.5")
+  def ??(str: String): String = ?(str)
 
   /**
    * Get a core lift localized and formatted string or return the original string.
@@ -1025,7 +1032,8 @@ trait S extends HasParams with Loggable {
    *
    * @return the localized version of the string
    */
-  def ??(str: String, params: AnyRef*): String = String.format(locale, ??(str), params: _*)
+  @deprecated("Use S.?() instead. S.?? will be removed in 2.6", "2.5")
+  def ??(str: String, params: AnyRef*): String = String.format(locale, ?(str), params: _*)
 
   private def ?!(str: String, resBundle: List[ResourceBundle]): String = resBundle.flatMap(r => tryo(r.getObject(str) match {
     case s: String => Full(s)
@@ -1598,7 +1606,7 @@ for {
         !old.path.partPath.isEmpty &&
         (old.request ne null))
       Req(old, S.sessionRewriter.map(_.rewrite) :::
-          LiftRules.statefulRewrite.toList, LiftRules.statelessTest.toList,
+          LiftRules.statefulRewrite.toList, Nil,
       LiftRules.statelessReqTest.toList)
     else old
   }
@@ -2005,7 +2013,7 @@ for {
    *
    * @param attr The attributes to set temporarily
    */
-  @deprecated("Use the S.withAttrs method instead")
+  @deprecated("Use the S.withAttrs method instead", "2.4")
   def setVars[T](attr: MetaData)(f: => T): T = withAttrs(attr)(f)
 
   /**
@@ -2269,6 +2277,52 @@ for {
     val snippet = if (name.indexOf(".") != -1) name.roboSplit("\\.") else name.roboSplit(":")
     NamedPF.applyBox(snippet, LiftRules.snippets.toList)
   }
+
+
+  private object _currentSnippetNodeSeq extends ThreadGlobal[NodeSeq]
+
+  /**
+   * The code block is executed while setting the current raw NodeSeq
+   * for access elsewhere
+   *
+   * @param ns the current NodeSeq
+   * @param f the call-by-name value to return (the code block to execute)
+   * @tparam T the type that f returns
+   * @return the value the the expression returns
+   */
+  def withCurrentSnippetNodeSeq[T](ns: NodeSeq)(f: => T): T =
+  _currentSnippetNodeSeq.doWith(ns)(f)
+
+  /**
+   * The current raw NodeSeq that resulted in a snippet invocation
+   * @return The current raw NodeSeq that resulted in a snippet invocation
+   */
+  def currentSnippetNodeSeq: Box[NodeSeq] = _currentSnippetNodeSeq.box
+
+  private object _ignoreFailedSnippets extends ThreadGlobal[Boolean]
+
+  /**
+   * Set the ignore snippet error mode.  In this mode, any
+   * snippet failures (usually snippets not being invocable) will be
+   * ignored and the original NodeSeq will be returned.
+   *
+   * This is useful if you want to do an initial pass of a page with a white-list
+   * of snippets, but not run every snippet on the page.
+   *
+   * @param ignore sets the ignore flag
+   * @param f the code block to execute
+   * @tparam T the return type of the code block
+   * @return the return of the code block
+   */
+  def runSnippetsWithIgnoreFailed[T](ignore: Boolean)(f: => T): T =
+  _ignoreFailedSnippets.doWith(ignore)(f)
+
+  /**
+   *
+   * @return should failed snippets be ignored and have the original NodeSeq
+   *         returned?
+   */
+  def ignoreFailedSnippets: Boolean = _ignoreFailedSnippets.box openOr false
 
   private object _currentSnippet extends RequestVar[Box[String]](Empty)
 
@@ -2642,10 +2696,10 @@ for {
    */
   private[http] def noticesToJsCmd: JsCmd = LiftRules.noticesToJsCmd()
 
-  @deprecated("Use AFuncHolder.listStrToAF")
+  @deprecated("Use AFuncHolder.listStrToAF", "2.4")
   def toLFunc(in: List[String] => Any): AFuncHolder = LFuncHolder(in, Empty)
 
-  @deprecated("Use AFuncHolder.unitToAF")
+  @deprecated("Use AFuncHolder.unitToAF", "2.4")
   def toNFunc(in: () => Any): AFuncHolder = NFuncHolder(in, Empty)
 
   implicit def stuff2ToUnpref(in: (Symbol, Any)): UnprefixedAttribute = new UnprefixedAttribute(in._1.name, Text(in._2.toString), Null)
@@ -2698,7 +2752,7 @@ for {
     if (inS.value) doRender(session.open_!)
     else {
       val req = Req(httpRequest, LiftRules.statelessRewrite.toList,
-                    LiftRules.statelessTest.toList,
+                    Nil,
                     LiftRules.statelessReqTest.toList,
                     System.nanoTime)
 
@@ -2741,7 +2795,7 @@ for {
    *
    * Use fmapFunc(AFuncHolder)(String => T)
    */
-  @deprecated("Use fmapFunc(AFuncHolder)(String => T)")
+  @deprecated("Use fmapFunc(AFuncHolder)(String => T)", "2.4")
   def mapFunc(in: AFuncHolder): String = {
     mapFunc(formFuncName, in)
   }
@@ -2751,7 +2805,7 @@ for {
    *
    * Use fmapFunc(AFuncHolder)(String => T)
    */
-  @deprecated("Use fmapFunc(AFuncHolder)(String => T)")
+  @deprecated("Use fmapFunc(AFuncHolder)(String => T)", "2.4")
   def mapFunc(name: String, inf: AFuncHolder): String = {
     addFunctionMap(name, inf)
     name
@@ -2935,10 +2989,10 @@ for {
    *
    */
   def respondAsync(f: => Box[LiftResponse]): () => Box[LiftResponse] = {
-   (for (req <- S.request) yield {
-     RestContinuation.respondAsync(req)(f)
-   }) openOr (() => Full(EmptyResponse))
+    RestContinuation.async {reply => f}
   }
+
+
 
   /**
    * If you bind functions (i.e. using SHtml helpers) inside the closure passed to callOnce,
@@ -2966,8 +3020,7 @@ for {
 /**
  * Defines the notices types
  */
-@serializable
-object NoticeType {
+object NoticeType extends Serializable{
   sealed abstract class Value(val title : String) {
     def lowerCaseTitle = title.toLowerCase
 
