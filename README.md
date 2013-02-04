@@ -5,18 +5,23 @@ Lift is the most powerful, most secure web framework available today. There are 
 Lift applications are:
 
 - Secure -- Lift apps are resistant to common vulnerabilities including many of the OWASP Top 10
-- Developer centeric -- Lift apps are fast to build, concise and easy to maintain
+- Developer centric -- Lift apps are fast to build, concise and easy to maintain
 - Scalable -- Lift apps are high performance and scale in the real world to handle insane traffic levels
 - Interactive like a desktop app -- Lift's Comet support is unparalled and Lift's ajax support is super-easy and very secure
 
 Because Lift applications are written in [Scala](http://www.scala-lang.org), an elegant JVM language, you can still use your favorite Java libraries and deploy to your favorite Servlet Container and app server. Use the code you've already written and deploy to the container you've already configured!
 
-## No Pull Requests
+## Pull Requests
 
-You must be a committer with signed committer agreement to submit patches. We do not accept pull requests from non-committers.
+We will accept pull requests into the [Lift codebase](https://github.com/lift)
+if the pull requests meet the following criteria:
 
-Please discuss issues and improvements on the [mailing list](http://groups.google.com/forum/#!forum/liftweb), and read up on [other ways you can contribute](https://www.assembla.com/spaces/liftweb/wiki/Contributing).
-
+* One or more of the following:
+    * Documentation including ScalaDoc comments in code
+    * Example code
+    * Small changes, enhancements, or bug fixes to Lift's code
+* Each pull request must include a signature at the bottom of the
+  `/contributors.md` file.
 
 ## Getting Started
 
@@ -69,11 +74,11 @@ This repository, `framework`, contains the following components:
 
 #### core
 
-Core elements used by Lift projects. If you wish to reuse some of Lift's helpers and constructs, such as `Box`, this compenent may be all you need. However, a web application will most likely require one or more of Lift's components.
+Core elements used by Lift projects. If you wish to reuse some of Lift's helpers and constructs, such as `Box`, this component may be all you need. However, a web application will most likely require one or more of Lift's components.
 
 #### web
 
-This component included all of Lift's core HTTP and web handling. Including `lift-webkit` in your build process should be sufficient for basic applications and will include `lift-core` as a transative dependency.
+This component includes all of Lift's core HTTP and web handling. Including `lift-webkit` in your build process should be sufficient for basic applications and will include `lift-core` as a transitive dependency.
 
 #### persistence
 
@@ -97,7 +102,7 @@ The [examples](https://github.com/lift/examples) repository contains the source 
 
 If you simply want to use Lift in your project, add Lift as a dependency to your build system or [download the JAR files directly](www.liftweb.net/download).
 
-If you wish to build Lift from source, checkout this repository and use the included `liftsh` script to build some or all of the components you want.
+If you wish to build Lift from source, check out this repository and use the included `liftsh` script to build some or all of the components you want.
 
     git clone https://github.com/lift/framework.git
     cd framework
@@ -117,11 +122,11 @@ The Lift Google Group is the official place for support and is an active, friend
 
 ### Wiki
 
-The Lift wiki is hosted on Assembla and can be found at [http://www.assembla.com/spaces/liftweb/wiki/](http://www.assembla.com/spaces/liftweb/wiki/). Anyone is welcome to contributed to the wiki; you must create an account and watch the Lift project in order to create or edit wiki pages.
+The Lift wiki is hosted on Assembla and can be found at [http://www.assembla.com/spaces/liftweb/wiki/](http://www.assembla.com/spaces/liftweb/wiki/). Anyone is welcome to contribute to the wiki; you must create an account and watch the Lift project in order to create or edit wiki pages.
 
 ### ScalaDocs
 
-The ScalaDocs for each release of Lift, in additional to the actual JARs, are available on ScalaTools. You can access the source code-based documentation for releases via the site's homepage or by navigating directly to the URL for the specific release. For instance, the Lift 2.4 release can be accessed at [http://scala-tools.org/mvnsites/liftweb-2.4/](http://scala-tools.org/mvnsites/liftweb-2.4/).
+The ScalaDocs for each release of Lift, in additional to the actual JARs, are available on ScalaTools. You can access the source code–based documentation for releases via the site's homepage or by navigating directly to the URL for the specific release. For instance, the Lift 2.4 release can be accessed at [http://scala-tools.org/mvnsites/liftweb-2.4/](http://scala-tools.org/mvnsites/liftweb-2.4/).
 
 ## License
 

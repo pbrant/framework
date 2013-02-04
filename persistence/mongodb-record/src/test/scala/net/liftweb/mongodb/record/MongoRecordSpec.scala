@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2011 WorldWide Conferencing, LLC
+ * Copyright 2010-2013 WorldWide Conferencing, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ class MongoRecordSpec extends Specification with MongoTestKit {
     val rec = MongoFieldTypeTestRecord.createRecord
     val allExpectedFieldNames: List[String] = "_id" :: "mandatoryMongoCaseClassField" ::
       (for {
-        typeName <- "Date JsonObject ObjectId Pattern UUID".split(" ")
+        typeName <- "Date JsonObject ObjectId UUID".split(" ")
         flavor <- "mandatory legacyOptional".split(" ")
       } yield flavor + typeName + "Field").toList
 
@@ -196,7 +196,6 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       .mandatoryDateField(new Date)
       .mandatoryJsonObjectField(TypeTestJsonObject(1, "jsonobj1", Map("x" -> "1")))
       .mandatoryObjectIdField(ObjectId.get)
-      .mandatoryPatternField(Pattern.compile("^Mo", Pattern.CASE_INSENSITIVE))
       .mandatoryUUIDField(UUID.randomUUID)
       .mandatoryMongoCaseClassField(MongoCaseClassTestObject(1,"str",MyTestEnum.TWO))
 
@@ -205,14 +204,20 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       ("mandatoryDateField" -> ("$dt" -> mfttr.meta.formats.dateFormat.format(mfttr.mandatoryDateField.value))) ~
       ("legacyOptionalDateField" -> (None: Option[JObject])) ~
       ("mandatoryJsonObjectField" -> (("intField" -> 1) ~ ("stringField" -> "jsonobj1") ~ ("mapField" -> ("x" -> "1")))) ~
-      ("legacyOptionalJsonObjectField" -> (("intField" -> 0) ~ ("stringField" -> "") ~ ("mapField" -> JObject(Nil)))) ~
+      ("legacyOptionalJsonObjectField" -> (None: Option[JObject])) ~
       ("mandatoryObjectIdField", ("$oid" -> mfttr.mandatoryObjectIdField.value.toString)) ~
       ("legacyOptionalObjectIdField" -> (None: Option[JObject])) ~
-      ("mandatoryPatternField" -> (("$regex" -> mfttr.mandatoryPatternField.value.pattern) ~ ("$flags" -> mfttr.mandatoryPatternField.value.flags))) ~
-      ("legacyOptionalPatternField" -> (None: Option[JObject])) ~
       ("mandatoryUUIDField" -> ("$uuid" -> mfttr.mandatoryUUIDField.value.toString)) ~
       ("legacyOptionalUUIDField" -> (None: Option[JObject])) ~
       ("mandatoryMongoCaseClassField" -> ("intField" -> 1) ~ ("stringField" -> "str") ~ ("enum" -> 1))
+
+    val pftr = PatternFieldTestRecord.createRecord
+      .mandatoryPatternField(Pattern.compile("^Mo", Pattern.CASE_INSENSITIVE))
+
+    val pftrJson =
+      ("_id" -> ("$oid" -> pftr.id.toString)) ~
+      ("mandatoryPatternField" -> (("$regex" -> pftr.mandatoryPatternField.value.pattern) ~ ("$flags" -> pftr.mandatoryPatternField.value.flags))) ~
+      ("legacyOptionalPatternField" -> (None: Option[JObject]))
 
     val ltr = ListTestRecord.createRecord
       .mandatoryStringListField(List("abc", "def", "ghi"))
@@ -223,14 +228,11 @@ class MongoRecordSpec extends Specification with MongoTestKit {
     val ltrJson =
       ("_id" -> ("$uuid" -> ltr.id.toString)) ~
       ("mandatoryStringListField" -> List("abc", "def", "ghi")) ~
-      ("legacyOptionalStringListField" -> List[String]()) ~
       ("mandatoryIntListField" -> List(4, 5, 6)) ~
-      ("legacyOptionalIntListField" -> List[Int]()) ~
       ("mandatoryMongoJsonObjectListField" -> List(
         (("intField" -> 1) ~ ("stringField" -> "jsonobj1") ~ ("mapField" -> ("x" -> "1"))),
         (("intField" -> 2) ~ ("stringField" -> "jsonobj2") ~ ("mapField" -> ("x" -> "2")))
       )) ~
-      ("legacyOptionalMongoJsonObjectListField" -> List[JObject]()) ~
       ("mongoCaseClassListField" -> List(
         ("intField" -> 1) ~ ("stringField" -> "str") ~ ("enum" -> 1)
       ))
@@ -246,13 +248,11 @@ class MongoRecordSpec extends Specification with MongoTestKit {
         ("b" -> "def") ~
         ("c" -> "ghi")
       )) ~
-      ("legacyOptionalStringMapField" -> JObject(Nil)) ~
       ("mandatoryIntMapField" -> (
         ("a" -> 4) ~
         ("b" -> 5) ~
         ("c" -> 6)
-      )) ~
-      ("legacyOptionalIntMapField" -> JObject(Nil))
+      ))
 
     // SubRecord
     val ssr1 = SubSubRecord.createRecord.name("SubSubRecord1")
@@ -273,61 +273,41 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       .mandatoryBsonRecordListField(List(sr1,sr2))
 
     val sr1Json =
-      JObject(List(
-        JField("name", JString("SubRecord1")),
-        JField("subsub", JObject(List(
-          JField("name", JString("SubSubRecord1"))
-        ))),
-        JField("subsublist", JArray(List(
-          JObject(List(JField("name", JString("SubSubRecord1")))),
-          JObject(List(JField("name", JString("SubSubRecord2"))))
-        ))),
-        JField("when", JObject(List(
-          JField("$dt", JString(srtr.meta.formats.dateFormat.format(sr1.when.value)))
-        ))),
-        JField("slist", JArray(List(JString("s1"), JString("s2")))),
-        JField("smap", JObject(List(
-          JField("a", JString("s1")),
-          JField("b", JString("s2"))
-        ))),
-        JField("oid", JObject(List(JField("$oid", JString(sr1.oid.value.toString))))),
-        JField("pattern", JObject(List(
-          JField("$regex", JString(sr1.pattern.value.pattern)),
-          JField("$flags", JInt(sr1.pattern.value.flags))
-        ))),
-        JField("uuid", JObject(List(JField("$uuid", JString(sr1.uuid.value.toString)))))
-      ))
+      ("name" -> "SubRecord1") ~
+      ("subsub" -> ("name" -> "SubSubRecord1")) ~
+      ("subsublist" -> List(
+        ("name" -> "SubSubRecord1"),
+        ("name" -> "SubSubRecord2")
+      )) ~
+      ("when" -> ("$dt" -> srtr.meta.formats.dateFormat.format(sr1.when.value))) ~
+      ("slist" -> List("s1", "s2")) ~
+      ("smap" -> (("a" -> "s1") ~ ("b" -> "s2"))) ~
+      ("oid" -> ("$oid" -> sr1.oid.value.toString)) ~
+      ("pattern" -> (("$regex" -> sr1.pattern.value.pattern) ~ ("$flags" -> sr1.pattern.value.flags))) ~
+      ("uuid" -> ("$uuid" -> sr1.uuid.value.toString))
 
     val sr2Json =
-      JObject(List(
-        JField("name", JString("SubRecord2")),
-        JField("subsub", JObject(List(
-          JField("name", JString(""))
-        ))),
-        JField("subsublist", JArray(List())),
-        JField("when", JObject(List(
-          JField("$dt", JString(srtr.meta.formats.dateFormat.format(sr2.when.value)))
-        ))),
-        JField("slist", JArray(List())),
-        JField("smap", JObject(List())),
-        JField("oid", JObject(List(JField("$oid", JString(sr2.oid.value.toString))))),
-        JField("pattern", JObject(List(
-          JField("$regex", JString(sr2.pattern.value.pattern)),
-          JField("$flags", JInt(sr2.pattern.value.flags))
-        ))),
-        JField("uuid", JObject(List(JField("$uuid", JString(sr2.uuid.value.toString)))))
-      ))
+      ("name" -> "SubRecord2") ~
+      ("subsub" -> ("name" -> "")) ~
+      ("subsublist" -> JArray(Nil)) ~
+      ("when" -> ("$dt" -> srtr.meta.formats.dateFormat.format(sr2.when.value))) ~
+      ("slist" -> JArray(Nil)) ~
+      ("smap" -> JObject(Nil)) ~
+      ("oid" -> ("$oid" -> sr2.oid.value.toString)) ~
+      ("pattern" -> (("$regex" -> sr2.pattern.value.pattern) ~ ("$flags" -> sr2.pattern.value.flags))) ~
+      ("uuid" -> ("$uuid" -> sr2.uuid.value.toString))
 
-    val srtrJson = JObject(List(
-      JField("_id", JObject(List(JField("$oid", JString(srtr.id.toString))))),
-      JField("mandatoryBsonRecordField", sr1Json),
-      JField("legacyOptionalBsonRecordField", JNothing),
-      JField("mandatoryBsonRecordListField", JArray(List(
-        sr1Json,
-        sr2Json
-      ))),
-      JField("legacyOptionalBsonRecordListField", JArray(List()))
-    ))
+    val srtrJson =
+      ("_id" -> ("$oid" -> srtr.id.toString)) ~
+      ("mandatoryBsonRecordField" -> sr1Json) ~
+      ("legacyOptionalBsonRecordField" -> JNothing) ~
+      ("mandatoryBsonRecordListField" -> List(sr1Json, sr2Json)) ~
+      ("legacyOptionalBsonRecordListField", JArray(Nil))
+
+    // JObjectField
+    val joftrFieldJObject: JObject = ("minutes" -> 59)
+    val joftr = JObjectFieldTestRecord.createRecord.mandatoryJObjectField(joftrFieldJObject)
+    val joftrJson: JValue = ("_id" -> ("$oid" -> joftr.id.toString)) ~ ("mandatoryJObjectField" -> ("minutes" -> 59))
 
     "save and retrieve 'standard' type fields" in {
       checkMongoIsRunning
@@ -371,6 +351,14 @@ class MongoRecordSpec extends Specification with MongoTestKit {
         tr mustEqual mfttr
       }
 
+      pftr.save
+
+      val pftrFromDb = PatternFieldTestRecord.find(pftr.id.value)
+      pftrFromDb.isDefined must_== true
+      pftrFromDb foreach { tr =>
+        tr mustEqual pftr
+      }
+
       ltr.save
 
       val ltrFromDb = ListTestRecord.find(ltr.id.value)
@@ -391,9 +379,18 @@ class MongoRecordSpec extends Specification with MongoTestKit {
 
       val srtrFromDb = SubRecordTestRecord.find(srtr.id.value)
       srtrFromDb.isDefined must_== true
-      srtrFromDb.toList map { tr =>
+      srtrFromDb foreach { tr =>
         tr mustEqual srtr
       }
+
+      joftr.save
+
+      val joftrFromDb = JObjectFieldTestRecord.find(joftr.id.is)
+      joftrFromDb.isDefined must_== true
+      joftrFromDb foreach { tr =>
+        tr must_== joftr
+      }
+      success
     }
 
     "save and retrieve Mongo type fields with default values" in {
@@ -404,6 +401,15 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       mfttrFromDb.isDefined must_== true
       mfttrFromDb foreach { tr =>
         tr mustEqual mfttrDef
+      }
+
+      val pftrDef = PatternFieldTestRecord.createRecord
+      pftrDef.save
+
+      val pftrFromDb = PatternFieldTestRecord.find(pftrDef.id.value)
+      pftrFromDb.isDefined must_== true
+      pftrFromDb foreach { tr =>
+        tr mustEqual pftrDef
       }
 
       val ltrDef = ListTestRecord.createRecord
@@ -432,15 +438,39 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       srtrFromDb.toList map { tr =>
         tr mustEqual srtrDef
       }
+
+      val joftrDef = JObjectFieldTestRecord.createRecord
+      joftrDef.save
+
+      val joftrFromDb = JObjectFieldTestRecord.find(joftrDef.id.value)
+      joftrFromDb.isDefined must_== true
+      joftrFromDb foreach { tr =>
+        tr mustEqual joftrDef
+      }
+      success
     }
 
     "convert Mongo type fields to JValue" in {
       mfttr.asJValue mustEqual mfttrJson
+    }
 
+    "convert pattern field to JValue" in {
+      pftr.asJValue mustEqual pftrJson
+    }
+
+    "convert list fields to JValue" in {
       ltr.asJValue mustEqual ltrJson
+    }
 
+    "convert map fields to JValue" in {
       mtr.asJValue mustEqual mtrJson
+    }
 
+    "convert JObject fields to JValue" in {
+      joftr.asJValue mustEqual joftrJson
+    }
+
+    "convert BsonRecord fields to JValue" in {
       val srtrAsJValue = srtr.asJValue
       srtrAsJValue \\ "_id" mustEqual srtrJson \\ "_id"
       srtrAsJValue \\ "mandatoryBsonRecordField" mustEqual srtrJson \\ "mandatoryBsonRecordField"
@@ -456,6 +486,12 @@ class MongoRecordSpec extends Specification with MongoTestKit {
         tr mustEqual mfttr
       }
 
+      val pftrFromJson = PatternFieldTestRecord.fromJsonString(compact(render(pftrJson)))
+      pftrFromJson.isDefined must_== true
+      pftrFromJson foreach { tr =>
+        tr mustEqual pftr
+      }
+
       val ltrFromJson = ListTestRecord.fromJsonString(compact(render(ltrJson)))
       ltrFromJson.isDefined must_== true
       ltrFromJson foreach { tr =>
@@ -466,6 +502,12 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       mtrFromJson.isDefined must_== true
       mtrFromJson.toList map { tr =>
         tr mustEqual mtr
+      }
+
+      val joftrFromJson = JObjectFieldTestRecord.fromJsonString(compact(render(joftrJson)))
+      joftrFromJson.isDefined must_== true
+      joftrFromJson.toList map { tr =>
+        tr mustEqual joftr
       }
     }
 
@@ -691,7 +733,6 @@ class MongoRecordSpec extends Specification with MongoTestKit {
           rec.dirtyFields.length must_== 0
         }
 
-
         val fttr2 = FieldTypeTestRecord.createRecord.save
 
         fttr2.legacyOptionalStringField("legacy optional string")
@@ -730,9 +771,6 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       mfttr.mandatoryObjectIdField(ObjectId.get)
       mfttr.mandatoryObjectIdField.dirty_? must_== true
 
-      mfttr.mandatoryPatternField(Pattern.compile("^Mon", Pattern.CASE_INSENSITIVE))
-      mfttr.mandatoryPatternField.dirty_? must_== true
-
       mfttr.mandatoryUUIDField(UUID.randomUUID)
       mfttr.mandatoryUUIDField.dirty_? must_== true
 
@@ -742,7 +780,7 @@ class MongoRecordSpec extends Specification with MongoTestKit {
       mfttr.legacyOptionalObjectIdField(Empty)
       mfttr.legacyOptionalObjectIdField.dirty_? must_== true
 
-      mfttr.dirtyFields.length must_== 7
+      mfttr.dirtyFields.length must_== 6
       mfttr.update
       mfttr.dirtyFields.length must_== 0
 
@@ -771,6 +809,25 @@ class MongoRecordSpec extends Specification with MongoTestKit {
         rec must_== mfttr2
         rec.dirtyFields.length must_== 0
       }
+    }
+
+    "update dirty fields for a PatternFieldTestRecord" in {
+      val pftrd = PatternFieldTestRecord.createRecord.save
+
+      pftrd.mandatoryPatternField(Pattern.compile("^Mon", Pattern.CASE_INSENSITIVE))
+      pftrd.mandatoryPatternField.dirty_? must_== true
+
+      pftrd.dirtyFields.length must_== 1
+      pftrd.update
+      pftrd.dirtyFields.length must_== 0
+
+      val fromDb = PatternFieldTestRecord.find(pftrd.id.is)
+      fromDb.isDefined must_== true
+      fromDb foreach { rec =>
+        rec must_== pftrd
+        rec.dirtyFields.length must_== 0
+      }
+      success
     }
 
     "update dirty fields for a ListTestRecord" in {
@@ -822,8 +879,6 @@ class MongoRecordSpec extends Specification with MongoTestKit {
     }
 
     "update dirty fields for a SubRecordTestRecord" in {
-      val srtr = SubRecordTestRecord.createRecord.save
-
       val ssr1 = SubSubRecord.createRecord.name("SubSubRecord1")
       val ssr2 = SubSubRecord.createRecord.name("SubSubRecord2")
 
@@ -835,9 +890,13 @@ class MongoRecordSpec extends Specification with MongoTestKit {
         .smap(Map("a" -> "s1", "b" -> "s2"))
         .pattern(Pattern.compile("^Mon", Pattern.CASE_INSENSITIVE))
 
-      val sr2 = SubRecord.createRecord.name("SubRecord2")
+      val srtr = SubRecordTestRecord.createRecord
+        .mandatoryBsonRecordField(sr1)
+        .save
 
-      srtr.mandatoryBsonRecordField(sr1)
+      val sr2 = sr1.copy.name("SubRecord2")
+
+      srtr.mandatoryBsonRecordField(sr2)
       srtr.mandatoryBsonRecordField.dirty_? must_== true
 
       srtr.mandatoryBsonRecordListField(List(sr1,sr2))

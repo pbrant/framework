@@ -33,8 +33,7 @@ import net.liftweb.record.field._
 import net.liftweb.proto.{ProtoUser => GenProtoUser}
 
 /**
- * ProtoUser is a base class that gives you a "User" that has a first name,
- * last name, email, etc.
+ * ProtoUser provides a "User" with a first name, last name, email, etc.
  */
 trait ProtoUser[T <: ProtoUser[T]] extends Record[T] {
   self: T =>
@@ -177,7 +176,7 @@ trait ProtoUser[T <: ProtoUser[T]] extends Record[T] {
 }
 
 /**
- * Mix this trait into the the Mapper singleton for User and you
+ * Mix this trait into the Mapper singleton for User and you
  * get a bunch of user functionality including password reset, etc.
  */
 trait MetaMegaProtoUser[ModelType <: MegaProtoUser[ModelType]] extends MetaRecord[ModelType] with GenProtoUser {
@@ -203,7 +202,7 @@ trait MetaMegaProtoUser[ModelType <: MegaProtoUser[ModelType]] extends MetaRecor
     def displayHtml: NodeSeq = from.displayHtml
 
     /**
-     * Does this represent a pointer to a Password field
+     * Does this represent a pointer to a Password field?
      */
     def isPasswordField_? : Boolean = from match {
       case a: PasswordField[_] => true
@@ -366,7 +365,7 @@ trait MegaProtoUser[T <: MegaProtoUser[T]] extends ProtoUser[T] {
   }
 
   /**
-   * The has the user been validated.
+   * Whether the user has been validated.
    * You can override the behavior
    * of this field:
    * <pre name="code" class="scala">
@@ -427,4 +426,3 @@ trait MegaProtoUser[T <: MegaProtoUser[T]] extends ProtoUser[T] {
   def localeDisplayName = S.?("locale")
 
 }
-

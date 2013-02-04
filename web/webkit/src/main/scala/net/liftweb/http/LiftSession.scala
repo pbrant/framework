@@ -87,6 +87,8 @@ object LiftSession {
    */
   var onEndServicing: List[(LiftSession, Req, Box[LiftResponse]) => Unit] = Nil
 
+
+
   @volatile private var constructorCache: Map[(Class[_], Box[Class[_]]), Box[ConstructorType]] = Map()
 
   private[http] def constructFrom[T](session: LiftSession, pp: Box[ParamPair], clz: Class[T]): Box[T] = {
@@ -134,8 +136,8 @@ object LiftSession {
       }
     }).map {
       case uc: UnitConstructor => uc.makeOne
-      case pc: PConstructor => pc.makeOne(pp.open_!.v) // open_! okay
-      case psc: PAndSessionConstructor => psc.makeOne(pp.open_!.v, session)
+      case pc: PConstructor => pc.makeOne(pp.openOrThrowException("It's ok").v)
+      case psc: PAndSessionConstructor => psc.makeOne(pp.openOrThrowException("It's ok").v, session)
     }
   }
 
@@ -208,6 +210,18 @@ object SessionMaster extends LiftActor with Loggable {
           } or Full(LiftRules.statelessSession.vend.apply(req))
         case _ => getSession(req.request, otherId)
       }
+    }
+  }
+
+
+  /**
+   * End comet long polling for all sessions. This allows a clean reload of Nginx
+   * because Nginx children stick around for long polling.
+   */
+  def breakOutAllComet() {
+    val ses = lockRead(sessions)
+    ses.valuesIterator.foreach {
+      _.session.breakOutComet()
     }
   }
 
@@ -419,7 +433,7 @@ private[http] object RenderVersion {
 }
 
 /**
- * A trait defining how stateful the session is 
+ * A trait defining how stateful the session is
  */
 trait HowStateful {
   private val howStateful = new ThreadGlobal[Boolean]
@@ -500,13 +514,12 @@ private final case class PostPageFunctions(renderVersion: String,
 }
 
 /**
- * existingResponse is Empty if we have no response for this request
- * yet. pendingActors is a list of actors who want to be notified when
- * this response is received.
+ * The responseFuture will be satisfied by the original request handling
+ * thread when the response has been calculated. Retries will wait for the
+ * future to be satisfied in order to return the proper response.
  */
-private[http] final case class AjaxRequestInfo(requestVersion:Int,
-                                               existingResponse:Box[Box[LiftResponse]],
-                                               pendingActors:List[LiftActor],
+private[http] final case class AjaxRequestInfo(requestVersion: Long,
+                                               responseFuture: LAFuture[Box[LiftResponse]],
                                                lastSeen: Long)
 
 /**
@@ -514,13 +527,10 @@ private[http] final case class AjaxRequestInfo(requestVersion:Int,
  */
 class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
                   val httpSession: Box[HTTPSession]) extends LiftMerge with Loggable with HowStateful {
-  val sessionHtmlProperties: SessionVar[HtmlProperties] =
-    new SessionVar[HtmlProperties](LiftRules.htmlProperties.vend(
-      S.request openOr Req.nil
-    )) {}
+  def sessionHtmlProperties = LiftRules.htmlProperties.session.is.make openOr LiftRules.htmlProperties.default.is.vend
 
   val requestHtmlProperties: TransientRequestVar[HtmlProperties] =
-    new TransientRequestVar[HtmlProperties](sessionHtmlProperties.is) {}
+    new TransientRequestVar[HtmlProperties](sessionHtmlProperties(S.request openOr Req.nil)) {}
 
   @volatile
   private[http] var markedForTermination = false
@@ -569,11 +579,15 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
 
   /**
    * A list of AJAX requests that may or may not be pending for this
-   * session. There is up to one entry per RenderVersion.
+   * session. There is an entry for every AJAX request we don't *know*
+   * has completed successfully or been discarded by the client.
+   *
+   * See LiftServlet.handleAjax for how we determine we no longer need
+   * to hold a reference to an AJAX request.
    */
-  private val ajaxRequests = scala.collection.mutable.Map[String,AjaxRequestInfo]()
+  private var ajaxRequests = scala.collection.mutable.Map[String,List[AjaxRequestInfo]]()
 
-  private[http] def withAjaxRequests[T](fn: (scala.collection.mutable.Map[String, AjaxRequestInfo]) => T): T = {
+  private[http] def withAjaxRequests[T](fn: (scala.collection.mutable.Map[String, List[AjaxRequestInfo]]) => T) = {
     ajaxRequests.synchronized { fn(ajaxRequests) }
   }
 
@@ -618,7 +632,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
 
     lastServiceTime = millis
     LiftSession.onSetupSession.foreach(_(this))
-    sessionHtmlProperties.is // cause the properties to be calculated
+    sessionHtmlProperties // cause the properties to be calculated
   }
 
   def running_? = _running_?
@@ -695,6 +709,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
    * Executes the user's functions based on the query parameters
    */
   def runParams(state: Req): List[Any] = {
+
     val toRun = {
       // get all the commands, sorted by owner,
       (state.uploadedFiles.map(_.name) ::: state.paramNames).distinct.
@@ -727,28 +742,11 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
         val f = toRun.filter(_.owner == w)
         w match {
           // if it's going to a CometActor, batch up the commands
-          case Full(id) if asyncById.contains(id) => asyncById.get(id).toList.flatMap(a => {
-            val future =
-              a.!<(ActionMessageSet(f.map(i => buildFunc(i)), state))
-
-            def processResult(result: Any): List[Any] = result match {
-              case Full(li: List[_]) => li
+          case Full(id) if asyncById.contains(id) => asyncById.get(id).toList.flatMap(a =>
+            a.!?(ActionMessageSet(f.map(i => buildFunc(i)), state)) match {
               case li: List[_] => li
-              // We return the future so it can, from AJAX requests, be
-              // satisfied and update the pending ajax request map.
-              case Empty =>
-                val processingFuture = new LAFuture[Any]
-                // Wait for and process the future on a separate thread.
-                Schedule.schedule(() => {
-                  processingFuture.satisfy(processResult(future.get))
-                }, 0 seconds)
-                List((a.cometProcessingTimeoutHandler, processingFuture))
               case other => Nil
-            }
-
-            processResult(future.get(a.cometProcessingTimeout))
-          })
-
+            })
           case _ => f.map(i => buildFunc(i).apply())
         }
     }
@@ -872,10 +870,17 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
 
       withAjaxRequests { currentAjaxRequests =>
         for {
-          (version, requestInfo) <- currentAjaxRequests
-            if (now - requestInfo.lastSeen) > LiftRules.unusedFunctionsLifeTime
+          (version, requestInfos) <- currentAjaxRequests
         } {
-          currentAjaxRequests -= version
+          val remaining =
+            requestInfos.filter { info =>
+              (now - info.lastSeen) <= LiftRules.unusedFunctionsLifeTime
+            }
+
+          if (remaining.length > 0)
+            currentAjaxRequests += (version -> remaining)
+          else
+            currentAjaxRequests -= version
         }
       }
 
@@ -1007,9 +1012,10 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
     }
 
     withAjaxRequests { currentAjaxRequests =>
-      currentAjaxRequests.get(ownerName).foreach {
-        case info: AjaxRequestInfo =>
-          currentAjaxRequests += (ownerName -> info.copy(lastSeen = time))
+      currentAjaxRequests.get(ownerName).foreach { requestInfos =>
+        val updated = requestInfos.map(_.copy(lastSeen = time))
+
+        currentAjaxRequests += (ownerName -> updated)
       }
     }
 
@@ -1222,7 +1228,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
 
       case e: LiftFlowOfControlException => throw e
 
-      case e => S.assertExceptionThrown() ; NamedPF.applyBox((Props.mode, request, e), LiftRules.exceptionHandler.toList);
+      case e => S.runExceptionHandlers(request, e)
 
     }
 
@@ -1661,7 +1667,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
             val ret = findSnippetInstance(nameToTry)
             // Update the snippetMap so that we reuse the same instance in this request (unless the snippet is transient)
             ret.filter(TransientSnippet.notTransient(_)).foreach(s => snippetMap.set(snippetMap.is.updated(tagName, s)))
-            
+
             ret
         }
       }
@@ -1687,7 +1693,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
             runWhitelist(snippet, cls, method, kids){(S.locateMappedSnippet(snippet).map(_(kids)) or
               locSnippet(snippet)).openOr(
               S.locateSnippet(snippet).map(_(kids)) openOr {
-                
+
                 (locateAndCacheSnippet(cls)) match {
                   // deal with a stateless request when a snippet has
                   // different behavior in stateless mode
@@ -1829,7 +1835,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
             e.snippetFailure,
             e.buildStackTrace,
             wholeTag)
-          
+
         case e: SnippetFailureException =>
           reportSnippetError(page, snippetName,
             e.snippetFailure,

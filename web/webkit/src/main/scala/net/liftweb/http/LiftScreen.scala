@@ -39,7 +39,7 @@ trait AbstractScreen extends Factory {
   @volatile private[this] var _fieldList: List[() => FieldContainer] = Nil
 
   /**
-   * any additional parameters that need to be put in the on the form (e.g., mime type)
+   * Any additional parameters that need to be put on the form (e.g., mime type)
    */
   def additionalAttributes: MetaData =
     if (hasUploadField) new UnprefixedAttribute("enctype", Text("multipart/form-data"), Null) else Null
@@ -89,11 +89,11 @@ trait AbstractScreen extends Factory {
 
   def screenBottom: Box[Elem] = Empty
 
-  // an implicit coversion so we don't have to put Full around every Elem
+  // An implicit conversion so we don't have to put Full around every Elem
   protected implicit def elemInABox(in: Elem): Box[Elem] = Box !! in
 
   /**
-   * The name of the screen.  Override this to change the screen name
+   * The name of the screen.  Override this to change the screen name.
    */
   def screenName: String = "Screen"
 
@@ -225,7 +225,7 @@ trait AbstractScreen extends Factory {
     private lazy val _theFieldId: NonCleanAnyVar[String] =
       vendAVar(Helpers.nextFuncName)
 
-    override def toString = is.toString
+    override def toString = if (is != null) is.toString else ""
 
     def binding: Box[FieldBinding] = Empty
 
@@ -350,19 +350,20 @@ trait AbstractScreen extends Factory {
    * the returned FieldBuilder to convert it into a field
    *
    * @param name - the name of the field.  This is a call-by-name parameter, so you can dynamically calculate
-   * the name of the fiels (e.g., localize its name)
+   * the name of the field (e.g., localize its name)
    * @param default - the default value of the field
-   * @param validate - any validation functions
+   * @param stuff - any filter or validation functions
    */
-  protected def builder[T](name: => String, default: => T, stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): FieldBuilder[T] =
+  protected def builder[T](name: => String, default: => T, stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): FieldBuilder[T] = {
     new FieldBuilder[T](name, default, man, Empty,
       stuff.toList.collect {
-        case AVal(v) => v
+        case AVal(v: (T => List[FieldError])) => v
       },
       stuff.toList.collect {
         case AFilter(v) => v
       },
       stuff)
+  }
 
   protected object FilterOrValidate {
     implicit def promoteFilter[T](f: T => T): FilterOrValidate[T] = AFilter(f)
@@ -444,10 +445,11 @@ trait AbstractScreen extends Factory {
        */
       override def onConfirm_? : Boolean = confirmInfo getOrElse super.onConfirm_?
 
-      override def toForm: Box[NodeSeq] = underlying.toForm
+      override def toForm: Box[NodeSeq] =
+        underlying.toForm.map(ns => SHtml.ElemAttr.applyToAllElems(ns, formElemAttrs))
 
       /**
-       * Give the current state of things, should the this field be shown
+       * Given the current state of things, should this field be shown
        */
       override def show_? = newShow map (_()) openOr underlying.show_?
 
@@ -546,10 +548,12 @@ trait AbstractScreen extends Factory {
        */
       override def onConfirm_? : Boolean = confirmInfo getOrElse super.onConfirm_?
 
-      override def toForm: Box[NodeSeq] = underlying.flatMap(_.toForm)
+      override def toForm: Box[NodeSeq] = underlying
+          .flatMap(_.toForm)
+          .map(ns => SHtml.ElemAttr.applyToAllElems(ns, formElemAttrs))
 
       /**
-       * Give the current state of things, should the this field be shown
+       * Given the current state of things, should this field be shown
        */
       override def show_? = newShow map (_()) openOr (underlying.map(_.show_?) openOr false)
 
@@ -571,7 +575,7 @@ trait AbstractScreen extends Factory {
 
       override def name: String = underlying.map(_.name) openOr "N/A"
 
-      override def default = underlying.open_!.get
+      override def default = underlying.openOrThrowException("legacy code").get
 
       override implicit def manifest: Manifest[ValueType] = man
 
@@ -583,11 +587,11 @@ trait AbstractScreen extends Factory {
         case AFilter(f) => f
       }.toList
 
-      override def is = underlying.open_!.get
+      override def is = underlying.openOrThrowException("Legacy code").get
 
-      override def get = underlying.open_!.get
+      override def get = underlying.openOrThrowException("Legacy code").get
 
-      override def set(v: T) = underlying.open_!.set(setFilter.foldLeft(v)((v, f) => f(v)))
+      override def set(v: T) = underlying.openOrThrowException("Legacy code").set(setFilter.foldLeft(v)((v, f) => f(v)))
 
       override def uniqueFieldId: Box[String] = paramFieldId or underlying.flatMap(_.uniqueFieldId) or super.uniqueFieldId
 
@@ -608,7 +612,7 @@ trait AbstractScreen extends Factory {
    */
   protected def field[T](name: => String, default: => T, stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): Field {type ValueType = T} =
     new FieldBuilder[T](name, default, man, Empty, stuff.toList.flatMap {
-      case AVal(v) => List(v)
+      case AVal(v: (T => List[FieldError])) => List(v)
       case _ => Nil
     }, stuff.toList.flatMap {
       case AFilter(v) => List(v)
@@ -647,7 +651,7 @@ trait AbstractScreen extends Factory {
 
   /**
    * A validation helper.  Make sure the string is at least a particular
-   * length and generate a validation issue if not
+   * length and generate a validation issue if not.
    */
   protected def valMinLen(len: => Int, msg: => String): String => List[FieldError] =
     s => s match {
@@ -658,7 +662,7 @@ trait AbstractScreen extends Factory {
 
   /**
    * A validation helper.  Make sure the string is no more than a particular
-   * length and generate a validation issue if not
+   * length and generate a validation issue if not.
    */
   protected def valMaxLen(len: => Int, msg: => String): String => List[FieldError] =
     s => s match {
@@ -753,7 +757,7 @@ trait AbstractScreen extends Factory {
             case _ => Nil
           }.toList
           override val validations = stuff.flatMap {
-            case AVal(v) => List(v)
+            case AVal(v: (T => List[FieldError])) => List(v)
             case _ => Nil
           }.toList
 
@@ -790,7 +794,7 @@ trait AbstractScreen extends Factory {
             case _ => Nil
           }.toList
           override val validations = stuff.flatMap {
-            case AVal(v) => List(v)
+            case AVal(v: (T => List[FieldError])) => List(v)
             case _ => Nil
           }.toList
 
@@ -848,7 +852,7 @@ trait AbstractScreen extends Factory {
 
 
   /**
-   * Create a textarea Field with 80 columns and 5 rows
+   * Create a textarea field with 80 columns and 5 rows
    *
    * @param name the name of the field (call-by-name)
    * @param defaultValue the starting value of the field (call-by-name)
@@ -862,7 +866,7 @@ trait AbstractScreen extends Factory {
 
 
   /**
-   * Create a textarea Field
+   * Create a textarea field
    *
    * @param name the name of the field (call-by-name)
    * @param defaultValue the starting value of the field (call-by-name)
@@ -940,7 +944,7 @@ trait AbstractScreen extends Factory {
   }
 
   /**
-   * Grabs the FormFieldId and FormParam parameters 
+   * Grabs the FormFieldId and FormParam parameters
    */
   protected def grabParams(in: Seq[FilterOrValidate[_]]):
   List[SHtml.ElemAttr] = {
@@ -960,9 +964,7 @@ trait AbstractScreen extends Factory {
    * @param name the name of the field (call-by-name)
    * @param default the starting value of the field (call-by-name)
    * @param choices the possible choices for the select
-   *
    * @param stuff - a list of filters and validations for the field
-   * @param f a PairStringPromoter (a wrapper around a function) that converts T => display String
    *
    * @return a newly minted Field{type ValueType = String}
    */
@@ -1280,8 +1282,8 @@ trait ScreenWizardRendered {
   }
 
   /**
-   * Should all instances of this Wizard or Screen unless
-   * they are explicitly set to Ajax
+   * Should all instances of this Wizard or Screen default to Ajax
+   * when not explicitly set
    */
   protected def defaultToAjax_? : Boolean = false
 
@@ -1481,7 +1483,7 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
       val localSnapshot = createSnapshot
       // val notices = S.getAllNotices
 
-      // if we're not Ajax, 
+      // if we're not Ajax,
       if (!ajaxForms_?) {
         S.seeOther(S.uri, () => {
           // S.appendNotices(notices)
@@ -1561,7 +1563,7 @@ trait LiftScreen extends AbstractScreen with StatefulSnippet with ScreenWizardRe
   }
 
   /**
-   * What additional attributes should be put on the
+   * What additional attributes should be put on
    */
   protected def formAttrs: MetaData = scala.xml.Null
 

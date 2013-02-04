@@ -76,8 +76,9 @@ trait PasswordTypedField extends TypedField[String] {
   }
 
   def setFromString(s: String): Box[String] = s match {
-    case "" if optional_? => setBoxPlain(Empty)
-    case _                => setBoxPlain(Full(s))
+    case null|"" if optional_? => setBoxPlain(Empty)
+    case null|"" => setBoxPlain(Failure(notOptionalErrorMessage))
+    case _ => setBoxPlain(Full(s))
   }
 
   override def validate: List[FieldError] = {
@@ -88,8 +89,10 @@ trait PasswordTypedField extends TypedField[String] {
 
   override def notOptionalErrorMessage = S.?("password.must.be.set")
 
+  override def formInputType = "password"
+
   private def elem = S.fmapFunc(SFuncHolder(this.setFromAny(_))){
-    funcName => <input type="password"
+    funcName => <input type={formInputType}
       name={funcName}
       value={valueBox openOr ""}
       tabindex={tabIndex toString}/>}

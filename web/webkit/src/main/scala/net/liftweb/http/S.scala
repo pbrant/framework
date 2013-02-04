@@ -332,6 +332,7 @@ trait S extends HasParams with Loggable {
   private val autoCleanUp = new ThreadGlobal[Boolean]
   private val _oneShot = new ThreadGlobal[Boolean]
   private val _disableTestFuncNames = new ThreadGlobal[Boolean]
+  private object _originalRequest extends RequestVar[Box[Req]](Empty)
 
   private object _exceptionThrown extends TransientRequestVar(false)
 
@@ -378,6 +379,15 @@ trait S extends HasParams with Loggable {
    * @see Req
    */
   def request: Box[Req] = (Box !! _request.value) or CurrentReq.box
+
+
+  /**
+   * If this is an Ajax request, return the original request that created the page. The original
+   * request is useful because it has the original path which is helpful for localization purposes.
+   *
+   * @return the original request or if that's not available, the current request
+   */
+  def originalRequest: Box[Req] = _originalRequest.get or request
 
   private[http] object CurrentLocation extends RequestVar[Box[sitemap.Loc[_]]](request.flatMap(_.location))
 
@@ -967,6 +977,9 @@ trait S extends HasParams with Loggable {
    */
   def liftCoreResourceBundle: Box[ResourceBundle] = _liftCoreResBundle.is
 
+
+  private object resourceValueCache extends TransientRequestMemoize[(String, Locale), String]
+  
   /**
    * Get a localized string or return the original string.
    * We first try your own bundle resources, if that fails, we try
@@ -978,7 +991,7 @@ trait S extends HasParams with Loggable {
    *
    * @see # resourceBundles
    */
-  def ?(str: String): String = ?!(str, resourceBundles)
+  def ?(str: String): String = resourceValueCache.get(str -> locale, ?!(str, resourceBundles))
 
   /**
    * Get a localized string or return the original string.
@@ -993,7 +1006,8 @@ trait S extends HasParams with Loggable {
    *
    * @see # resourceBundles
    */
-  def ?(str: String, locale: Locale): String = ?!(str, resourceBundles(locale))
+  def ?(str: String, locale: Locale): String = resourceValueCache.get(str -> locale, ?!(str, resourceBundles(locale)))
+  
   /**
    * Attempt to localize and then format the given string. This uses the String.format method
    * to format the localized string.
@@ -1099,20 +1113,31 @@ trait S extends HasParams with Loggable {
    */
   def uri: String = request.map(_.uri).openOr("/")
 
-/**
-* Returns the query string for the current request
-*/
-def queryString: Box[String] =
-for {
-  req <- request
-  queryString <- req.request.queryString
-} yield queryString
+  /**
+   * Returns the query string for the current request
+   */
+  def queryString: Box[String] = for {
+    req <- request
+    queryString <- req.request.queryString
+  } yield queryString
+    
+    
+  def uriAndQueryString: Box[String] = for {
+    req <- this.request
+  } yield req.uri + (queryString.map(s => "?"+s) openOr "")
 
-
-def uriAndQueryString: Box[String] =
-for {
-  req <- this.request
-} yield req.uri + (queryString.map(s => "?"+s) openOr "")
+  /**
+   * Run any configured exception handlers and make sure errors in
+   * the handlers are ignored
+   */
+  def runExceptionHandlers(req: Req, orig: Throwable): Box[LiftResponse] = {
+    S.assertExceptionThrown() 
+    tryo{(t: Throwable) => 
+      logger.error("An error occurred while running error handlers", t)
+      logger.error("Original error causing error handlers to be run", orig)} {
+      NamedPF.applyBox((Props.mode, req, orig), LiftRules.exceptionHandler.toList);
+    } openOr Full(PlainTextResponse("An error has occurred while processing an error using the functions in LiftRules.exceptionHandler. Check the log for details.", 500))
+  }
 
   private object _skipXmlHeader extends TransientRequestVar(false)
 
@@ -1616,7 +1641,11 @@ for {
       _attrs.doWith((Null,Nil)) {
           _resBundle.doWith(Nil) {
             inS.doWith(true) {
-              withReq(doStatefulRewrite(request)) {
+              val statefulRequest = doStatefulRewrite(request)
+              withReq(statefulRequest) {
+                // set the request for standard requests
+                if (statefulRequest.standardRequest_?) _originalRequest.set(Full(statefulRequest))
+
                 _nest2InnerInit(f)
               }
           }
@@ -1999,13 +2028,13 @@ for {
      * Returns the unprefixed attribute value as an Option[NodeSeq]
      * for easy addition to the attributes
      */
-    def ~(key: String): Option[NodeSeq] = apply(key).toOption.map(Text)
+    def ~(key: String): Option[NodeSeq] = apply(key).toOption.map(Text(_))
 
     /**
      * Returns the prefixed attribute value as an Option[NodeSeq]
      * for easy addition to the attributes
      */
-    def ~(prefix: String, key: String): Option[NodeSeq] = apply(prefix, key).toOption.map(Text)
+    def ~(prefix: String, key: String): Option[NodeSeq] = apply(prefix, key).toOption.map(Text(_))
   }
 
   /**
@@ -2124,13 +2153,13 @@ for {
      * Returns the unprefixed attribute value as an Option[NodeSeq]
      * for easy addition to the attributes
      */
-    def ~(key: String): Option[NodeSeq] = apply(key).toOption.map(Text)
+    def ~(key: String): Option[NodeSeq] = apply(key).toOption.map(Text(_))
 
     /**
      * Returns the prefixed attribute value as an Option[NodeSeq]
      * for easy addition to the attributes
      */
-    def ~(prefix: String, key: String): Option[NodeSeq] = apply(prefix, key).toOption.map(Text)
+    def ~(prefix: String, key: String): Option[NodeSeq] = apply(prefix, key).toOption.map(Text(_))
   }
 
   /**
@@ -2449,9 +2478,9 @@ for {
                 val future: LAFuture[Any] = new LAFuture
 
                 updateFunctionMap(name, new S.ProxyFuncHolder(value) {
-                  override def apply(in: List[String]): Any = future.get(5000).open_!
+                  override def apply(in: List[String]): Any = future.get(5000).openOrThrowException("legacy code")
 
-                  override def apply(in: FileParamHolder): Any = future.get(5000).open_!
+                  override def apply(in: FileParamHolder): Any = future.get(5000).openOrThrowException("legacy code")
                 })
 
                 future
@@ -2467,7 +2496,7 @@ for {
               override def apply(in: List[String]): Any = {
                 val ns = fixShot()
                 if (ns) {
-                  theFuture.get(5000).open_!
+                  theFuture.get(5000).openOrThrowException("legacy code")
                 } else {
                   val future = theFuture
                   try {
@@ -2484,7 +2513,7 @@ for {
                 val ns = fixShot()
 
                 if (ns) {
-                  theFuture.get(5000).open_!
+                  theFuture.get(5000).openOrThrowException("legacy code")
                 } else {
                   val future = theFuture
                   try {
@@ -2504,8 +2533,6 @@ for {
       }
     }
   }
-
-  private def booster(lst: List[String], func: String => Any): Unit = lst.foreach(v => func(v))
 
   /**
    * Decorates an URL with jsessionid parameter in case cookies are disabled from the container. Also
@@ -2749,7 +2776,7 @@ for {
     def doRender(session: LiftSession): NodeSeq =
       session.processSurroundAndInclude("external render", xhtml)
 
-    if (inS.value) doRender(session.open_!)
+    if (inS.value) doRender(session.openOrThrowException("legacy code"))
     else {
       val req = Req(httpRequest, LiftRules.statelessRewrite.toList,
                     Nil,
@@ -2854,42 +2881,42 @@ for {
   def error(id: String, n: String) {error(id, Text(n))}
 
   /**
-   * Sets an NOTICE notice as plain text
+   * Sets a NOTICE notice as plain text
    */
   def notice(n: String) {notice(Text(n))}
 
   /**
-   * Sets an NOTICE notice as an XML sequence
+   * Sets a NOTICE notice as an XML sequence
    */
   def notice(n: NodeSeq) {p_notice.is += ((NoticeType.Notice, n, Empty))}
 
   /**
-   * Sets an NOTICE notice as and XML sequence and associates it with an id
+   * Sets a NOTICE notice as and XML sequence and associates it with an id
    */
   def notice(id: String, n: NodeSeq) {p_notice.is += ((NoticeType.Notice, n, Full(id)))}
 
   /**
-   * Sets an NOTICE notice as plai text and associates it with an id
+   * Sets a NOTICE notice as plai text and associates it with an id
    */
   def notice(id: String, n: String) {notice(id, Text(n))}
 
   /**
-   * Sets an WARNING notice as plain text
+   * Sets a WARNING notice as plain text
    */
   def warning(n: String) {warning(Text(n))}
 
   /**
-   * Sets an WARNING notice as an XML sequence
+   * Sets a WARNING notice as an XML sequence
    */
   def warning(n: NodeSeq) {p_notice += ((NoticeType.Warning, n, Empty))}
 
   /**
-   * Sets an WARNING notice as an XML sequence and associates it with an id
+   * Sets a WARNING notice as an XML sequence and associates it with an id
    */
   def warning(id: String, n: NodeSeq) {p_notice += ((NoticeType.Warning, n, Full(id)))}
 
   /**
-   * Sets an WARNING notice as plain text and associates it with an id
+   * Sets a WARNING notice as plain text and associates it with an id
    */
   def warning(id: String, n: String) {warning(id, Text(n))}
 
@@ -2970,7 +2997,7 @@ for {
   def idMessages(f: => List[(NodeSeq, Box[String])]): List[(String, List[NodeSeq])] = {
     val res = new HashMap[String, List[NodeSeq]]
     f filter (_._2.isEmpty == false) foreach (_ match {
-      case (node, id) => val key = id open_!; res += (key -> (res.getOrElseUpdate(key, Nil) ::: List(node)))
+      case (node, id) => val key = id openOrThrowException("legacy code"); res += (key -> (res.getOrElseUpdate(key, Nil) ::: List(node)))
     })
 
     res toList
@@ -2989,7 +3016,7 @@ for {
    *
    */
   def respondAsync(f: => Box[LiftResponse]): () => Box[LiftResponse] = {
-    RestContinuation.async {reply => f}
+    RestContinuation.async {reply => reply(f.openOr(EmptyResponse))}
   }
 
 

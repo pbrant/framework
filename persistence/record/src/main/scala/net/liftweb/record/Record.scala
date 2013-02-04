@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2011 WorldWide Conferencing, LLC
+ * Copyright 2007-2013 WorldWide Conferencing, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-package net.liftweb 
-package record 
+package net.liftweb
+package record
 
 import common._
 import http.js.{JsExp, JsObj}
@@ -54,7 +54,7 @@ trait Record[MyType <: Record[MyType]] extends FieldContainer {
   }
 
   /**
-   * Returns the HTML representation ofthis Record
+   * Returns the HTML representation of this Record
    */
   def toXHtml: NodeSeq = {
     meta.toXHtml(this)
@@ -72,7 +72,7 @@ trait Record[MyType <: Record[MyType]] extends FieldContainer {
   }
 
   /**
-   * Retuns the JSON representation of this record
+   * Returns the JSON representation of this record
    *
    * @return a JsObj
    */
@@ -82,9 +82,9 @@ trait Record[MyType <: Record[MyType]] extends FieldContainer {
   * Save the instance and return the instance
   */
   def saveTheRecord(): Box[MyType] = throw new BackingStoreException("Raw Records don't save themselves")
-  
+
   /**
-   * Retuns the JSON representation of this record, converts asJValue to JsObj
+   * Returns the JSON representation of this record, converts asJValue to JsObj
    *
    * @return a JsObj
    */
@@ -141,6 +141,30 @@ trait Record[MyType <: Record[MyType]] extends FieldContainer {
    * @return Box[MappedField]
    */
   def fieldByName(fieldName: String): Box[Field[_, MyType]] = meta.fieldByName(fieldName, this)
+
+  override def equals(other: Any): Boolean = {
+    other match {
+      case that: Record[MyType] =>
+        that.fields.corresponds(this.fields) { (a,b) =>
+          a.name == b.name && a.valueBox == b.valueBox
+        }
+      case _ => false
+    }
+  }
+
+  override def toString = {
+    val fieldList = this.fields.map(f => "%s=%s" format (f.name,
+        f.valueBox match {
+          case Full(c: java.util.Calendar) => c.getTime().toString()
+          case Full(null) => "null"
+          case Full(v) => v.toString
+          case x => x.toString
+        }))
+
+    "%s={%s}" format (this.getClass.toString, fieldList.mkString(", "))
+  }
+
+  def copy: MyType = meta.copy(this)
 }
 
 trait ExpandoRecord[MyType <: Record[MyType] with ExpandoRecord[MyType]] {

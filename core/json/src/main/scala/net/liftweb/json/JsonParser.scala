@@ -169,14 +169,19 @@ object JsonParser {
     }
 
     def newValue(v: JValue) {
-      vals.peek(classOf[JValue]) match {
-        case f: JField =>
-          vals.pop(classOf[JField])
-          val newField = JField(f.name, v)
-          val obj = vals.peek(classOf[JObject])
-          vals.replace(JObject(newField :: obj.obj))
-        case a: JArray => vals.replace(JArray(v :: a.arr))
-        case _ => p.fail("expected field or array")
+      if (!vals.isEmpty)
+        vals.peek(classOf[JValue]) match {
+          case f: JField =>
+            vals.pop(classOf[JField])
+            val newField = JField(f.name, v)
+            val obj = vals.peek(classOf[JObject])
+            vals.replace(JObject(newField :: obj.obj))
+          case a: JArray => vals.replace(JArray(v :: a.arr))
+          case _ => p.fail("expected field or array")
+        }
+      else {
+        vals.push(v)
+        root = Some(v)
       }
     }
 
@@ -217,6 +222,7 @@ object JsonParser {
     }
 
     def peekOption = if (stack isEmpty) None else Some(stack.peek)
+    def isEmpty = stack.isEmpty
   }
 
   class Parser(buf: Buffer) {
@@ -237,7 +243,7 @@ object JsonParser {
           unquote(buf)
         } catch {
           case p: ParseException => throw p
-          case _ => fail("unexpected string end")
+          case _: Exception => fail("unexpected string end")
         }
 
       def parseValue(first: Char) = {
@@ -247,7 +253,9 @@ object JsonParser {
         s.append(first)
         while (wasInt) {
           val c = buf.next
-          if (c == '.' || c == 'e' || c == 'E') {
+          if (c == EOF) {
+            wasInt = false
+          } else if (c == '.' || c == 'e' || c == 'E') {
             doubleVal = true
             s.append(c)
           } else if (!(Character.isDigit(c) || c == '.' || c == 'e' || c == 'E' || c == '-')) {
@@ -339,7 +347,7 @@ object JsonParser {
     def back = cur = cur-1
 
     def next: Char = {
-      if (cur == offset && read < 0) {
+      if (cur >= offset && read < 0) {
         if (eofIsFailure) throw new ParseException("unexpected eof", null) else EOF
       } else {
         val c = segment(cur)
@@ -392,9 +400,11 @@ object JsonParser {
       }
 
       val length = in.read(segment, offset, segment.length-offset)
-      cur = offset
-      offset += length
-      length
+      if (length != -1) {
+        cur = offset
+        offset += length
+        length
+      } else -1
     }
   }
 

@@ -319,7 +319,7 @@ trait RestHelper extends LiftRules.DispatchPF {
    * type (e.g., JSON or XML).<br/><br/>
    * @param selection -- a function that determines the response type
    * based on the Req.
-   * @parama pf -- a PartialFunction that converts the request to a
+   * @param pf -- a PartialFunction that converts the request to a
    * response type (e.g., a case class that contains the response).
    * @param cvt -- a function that converts from the response type
    * to a the appropriate LiftResponse based on the selected response
@@ -336,7 +336,7 @@ trait RestHelper extends LiftRules.DispatchPF {
         () => {
           pf(r).box match {
             case Full(resp) =>
-              val selType = selection(r).open_! // Full because pass isDefinedAt
+              val selType = selection(r).openOrThrowException("Full because pass isDefinedAt")
               if (cvt.isDefinedAt((selType, resp, r)))
                   Full(cvt((selType, resp, r)))
               else emptyToResp(ParamFailure("Unabled to convert the message", 
@@ -352,7 +352,7 @@ trait RestHelper extends LiftRules.DispatchPF {
   /**
    * Serve a request returning either JSON or XML.
    *
-   * @parama pf -- a Partial Function that converts the request into
+   * @param pf -- a Partial Function that converts the request into
    * an intermediate response.
    * @param cvt -- convert the intermediate response to a LiftResponse
    * based on the request being for XML or JSON.  If T is JsonXmlAble,

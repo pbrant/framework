@@ -2,7 +2,7 @@ import Dependencies._
 
 organization in ThisBuild          := "net.liftweb"
 
-version in ThisBuild               := "2.5-ccap01"
+version in ThisBuild               := "2.5-ccap02"
 
 homepage in ThisBuild              := Some(url("http://www.liftweb.net"))
 
@@ -12,9 +12,9 @@ startYear in ThisBuild             := Some(2006)
 
 organizationName in ThisBuild      := "WorldWide Conferencing, LLC"
 
-crossScalaVersions in ThisBuild    := Seq("2.9.1")
+crossScalaVersions in ThisBuild    := Seq("2.10.0", "2.9.2")
 
-libraryDependencies in ThisBuild ++= Seq(specs2, scalacheck)
+libraryDependencies in ThisBuild <++= scalaVersion {sv => Seq(specs2(sv), scalacheck) }
 
 // Settings for Sonatype compliance
 pomIncludeRepository in ThisBuild  := { _ => false }

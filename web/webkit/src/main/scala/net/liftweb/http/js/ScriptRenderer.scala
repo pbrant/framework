@@ -20,6 +20,8 @@ package js
 
 import net.liftweb.http._
 import net.liftweb.common._
+import net.liftweb.util.Props
+import net.liftweb.http.js.JE.JsVar
 
 /**
  * the default mechanisms for doing Ajax and Comet in Lift
@@ -46,6 +48,18 @@ object ScriptRenderer {
 	  toSend.onSuccess = theSuccess;
 	  toSend.onFailure = theFailure;
 	  toSend.responseType = responseType;
+	  toSend.version = liftAjax.lift_ajaxVersion++;
+
+      // Make sure we wrap when we hit JS max int.
+      var version = liftAjax.lift_ajaxVersion
+      if ((version - (version + 1) != -1) || (version - (version - 1) != 1))
+        liftAjax.lift_ajaxVersion = 0;
+
+	  if (liftAjax.lift_uriSuffix) {
+	    theData += '&' + liftAjax.lift_uriSuffix;
+	    toSend.theData = theData;
+	    liftAjax.lift_uriSuffix = undefined;
+	  }
 
 	  liftAjax.lift_ajaxQueue.push(toSend);
 	  liftAjax.lift_ajaxQueueSort();
@@ -57,6 +71,17 @@ object ScriptRenderer {
 
     lift_uriSuffix: undefined,
 
+    lift_logError: function(msg) {
+      """ + (LiftRules.jsLogFunc.map(_(JsVar("msg")).toJsCmd) openOr "") + """
+    },
+
+    lift_defaultLogError: function(msg) {
+      if (console && typeof console.error == 'function')
+        console.error(msg);
+      else
+        alert(msg);
+    },
+    
     lift_ajaxQueueSort: function() {
       liftAjax.lift_ajaxQueue.sort(function (a, b) {return a.when - b.when;});
     },
@@ -102,12 +127,14 @@ object ScriptRenderer {
     },
 
     lift_registerGC: function() {
-      var data = "__lift__GC=_"
+      var data = "__lift__GC=_",
+          version = null;
       """ + LiftRules.jsArtifacts.ajax(AjaxInfo(JE.JsRaw("data"),
     "POST",
     LiftRules.ajaxPostTimeout,
     false, "script",
-    Full("liftAjax.lift_successRegisterGC"), Full("liftAjax.lift_failRegisterGC"), false)) + """
+    Full("liftAjax.lift_successRegisterGC"), Full("liftAjax.lift_failRegisterGC"))) +
+          """
        },
 
 
@@ -131,21 +158,27 @@ object ScriptRenderer {
                  aboutToSend.onSuccess(data);
                }
                liftAjax.lift_doCycleQueueCnt++;
-               liftAjax.lift_ajaxVersion++;
                liftAjax.lift_doAjaxCycle();
              };
 
              var failureFunc = function() {
                liftAjax.lift_ajaxInProcess = null;
-               var cnt = aboutToSend.retryCnt;
+               var cnt = aboutToSend.retryCnt;""" +
+               (if (!Props.devMode) "" else 
+  """
+               if (arguments.length == 3 && arguments[1] == 'parsererror') {
+                 liftAjax.lift_logError('The server call succeeded, but the returned Javascript contains an error: '+arguments[2])
+               } else
+  """) + 
+
+            """
                if (cnt < liftAjax.lift_ajaxRetryCount) {
-               aboutToSend.retryCnt = cnt + 1;
+                 aboutToSend.retryCnt = cnt + 1;
                  var now = (new Date()).getTime();
                  aboutToSend.when = now + (1000 * Math.pow(2, cnt));
                  queue.push(aboutToSend);
                  liftAjax.lift_ajaxQueueSort();
                } else {
-                 liftAjax.lift_ajaxVersion++;
                  if (aboutToSend.onFailure) {
                    aboutToSend.onFailure();
                  } else {
@@ -161,13 +194,10 @@ object ScriptRenderer {
                  aboutToSend.responseType.toLowerCase() === "json") {
                liftAjax.lift_actualJSONCall(aboutToSend.theData, successFunc, failureFunc);
              } else {
-               var theData = aboutToSend.theData;
-               if (liftAjax.lift_uriSuffix) {
-                 theData += '&' + liftAjax.lift_uriSuffix;
-                 aboutToSend.theData = theData;
-                 liftAjax.lift_uriSuffix = undefined;
-               }
-               liftAjax.lift_actualAjaxCall(theData, successFunc, failureFunc);
+               var theData = aboutToSend.theData,
+                   version = aboutToSend.version;
+
+               liftAjax.lift_actualAjaxCall(theData, version, successFunc, failureFunc);
              }
             }
          }
@@ -183,43 +213,37 @@ object ScriptRenderer {
 
        lift_ajaxVersion: 0,
 
-       addPageNameAndVersion: function(url) {
-         return """ + {
-    if (LiftRules.enableLiftGC) {
-      "url.replace('" + LiftRules.ajaxPath + "', '" + LiftRules.ajaxPath + "/'+lift_page+('-'+liftAjax.lift_ajaxVersion%36).toString(36));"
+       addPageNameAndVersion: function(url, version) {
+         """ + {
+    if (LiftRules.enableLiftGC) { """
+      var replacement = '""" + LiftRules.ajaxPath + """/'+lift_page;
+      if (version!=null)
+        replacement += ('-'+version.toString(36)) + (liftAjax.lift_ajaxQueue.length > 35 ? 35 : liftAjax.lift_ajaxQueue.length).toString(36);
+      return url.replace('""" + LiftRules.ajaxPath + """', replacement);"""
     } else {
-      "url;"
+      "return url;"
     }
   } + """
     },
 
-       addPageName: function(url) {
-         return """ + {
-    if (LiftRules.enableLiftGC) {
-      "url.replace('" + LiftRules.ajaxPath + "', '" + LiftRules.ajaxPath + "/'+lift_page);"
-    } else {
-      "url;"
-    }
-  } + """
-    },
-
-    lift_actualAjaxCall: function(data, onSuccess, onFailure) {
+    lift_actualAjaxCall: function(data, version, onSuccess, onFailure) {
       """ +
           LiftRules.jsArtifacts.ajax(AjaxInfo(JE.JsRaw("data"),
             "POST",
             LiftRules.ajaxPostTimeout,
             false, "script",
-            Full("onSuccess"), Full("onFailure"), true)) +
+            Full("onSuccess"), Full("onFailure"))) +
           """
         },
 
         lift_actualJSONCall: function(data, onSuccess, onFailure) {
+          var version = null;
           """ +
           LiftRules.jsArtifacts.ajax(AjaxInfo(JE.JsRaw("data"),
             "POST",
             LiftRules.ajaxPostTimeout,
             false, "json",
-            Full("onSuccess"), Full("onFailure"), true)) +
+            Full("onSuccess"), Full("onFailure"))) +
           """
               }
             };
@@ -292,7 +316,7 @@ object ScriptRenderer {
             false,
             "script",
             Full("liftComet.lift_handlerSuccessFunc"),
-            Full("liftComet.lift_handlerFailureFunc"), false)) +
+            Full("liftComet.lift_handlerFailureFunc"))) +
           """
               }
             }
