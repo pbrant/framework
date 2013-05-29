@@ -101,3 +101,70 @@ Kristof Jozsa
 
 ### Email: ###
 kristof.jozsa at gmail dot com
+
+### Name: ###
+Matt Farmer
+
+### Email: ###
+matt at frmr dot me
+
+### Name: ###
+Chris Williams
+
+### Email: ###
+chris dot williams @ joulebug dot com
+
+### Name: ###
+Gregory Flanagan
+
+### Email: ###
+gregmflanagan at gmail dot com
+
+### Name: ###
+Chris Gaudreau
+
+### Email: ###
+webmaster at crystala dot net
+
+### Name: ###
+Olivier Bruchez
+
+### Email: ###
+olivier at bruchez dot org
+
+### Name: ###
+Taylor Leese
+
+### Email: ###
+tleese22 at gmail dot com
+
+### Name: ###
+Jon Hoffman
+
+### Email: ###
+jonhoffman at gmail dot com
+
+### Name: ###
+Will Palmeri
+
+### Email: ###
+wpalmeri at gmail dot com
+
+### Name: ###
+Austen Holmes
+
+### Email: ###
+austen dot holmes at gmail dot com
+
+### Name: ###
+Jon Hoffman
+
+### Email: ###
+jonhoffman at gmail dot com
+
+###Name: ###
+Will Palmeri
+
+### Email: ###
+wpalmeri at gmail dot com
+

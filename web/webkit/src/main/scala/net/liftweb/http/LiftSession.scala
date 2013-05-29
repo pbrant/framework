@@ -17,9 +17,12 @@
 package net.liftweb
 package http
 
-import java.lang.reflect.{Method}
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
-import collection.mutable.{HashMap, ListBuffer}
+import collection.mutable.{ConcurrentMap, HashMap, ListBuffer}
+import collection.JavaConversions
+
 import xml._
 
 import common._
@@ -149,6 +152,29 @@ object LiftSession {
   def checkForContentId(in: NodeSeq): NodeSeq =
     Templates.checkForContentId(in)
 
+  /**
+   * Cache for findSnippetClass lookups.
+   */
+  private val snippetClassMap: ConcurrentMap[String, Box[Class[AnyRef]]] = JavaConversions.asScalaConcurrentMap(new ConcurrentHashMap())
+  
+  /*
+   * Given a Snippet name, try to determine the fully-qualified Class
+   * so that we can instantiate it via reflection.
+   */
+  def findSnippetClass(name: String): Box[Class[AnyRef]] = {
+    if (name == null) Empty
+    else {
+      snippetClassMap.getOrElseUpdate(name,{
+        // Name might contain some relative packages, so split them out and put them in the proper argument of findClass
+        val (packageSuffix, terminal) = name.lastIndexOf('.') match {
+          case -1 => ("", name)
+          case i => ("." + name.substring(0, i), name.substring(i + 1))
+        }
+        findClass(terminal, LiftRules.buildPackage("snippet").map(_ + packageSuffix) :::
+          (("lift.app.snippet" + packageSuffix) :: ("net.liftweb.builtin.snippet" + packageSuffix) :: Nil))
+      })
+    }
+  }
 
 }
 
@@ -656,7 +682,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
   // HttpServletRequests that have expired; these will then throw
   // NullPointerExceptions when their server name or otherwise are
   // accessed.
-  private[http] def cometForHost(hostAndPath: String): (List[(LiftActor, Req)], List[(LiftActor, Req)]) =
+  def cometForHost(hostAndPath: String): (List[(LiftActor, Req)], List[(LiftActor, Req)]) =
     synchronized {
       cometList
     }.foldLeft((List[(LiftActor, Req)](), List[(LiftActor, Req)]())) {
@@ -676,6 +702,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
     }
 
   private[http] def enterComet(what: (LiftActor, Req)): Unit = synchronized {
+    LiftRules.makeCometBreakoutDecision(this, what._2)
     cometList = what :: cometList
   }
 
@@ -792,7 +819,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
     sessionRewriter = HashMap.empty
   }
 
-  private[http] def fixSessionTime(): Unit = synchronized {
+  def fixSessionTime(): Unit = synchronized {
     for (httpSession <- this.httpSession) {
       lastServiceTime = millis // DO NOT REMOVE THIS LINE!!!!!
       val diff = lastServiceTime - httpSession.lastAccessedTime
@@ -807,10 +834,11 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
     }
   }
 
-  private[http] def doCometActorCleanup(): Unit = {
+  def doCometActorCleanup(): Unit = {
     val acl = synchronized {
       this.asyncComponents.values.toList
     }
+
     acl.foreach(_ ! ShutdownIfPastLifespan)
   }
 
@@ -855,7 +883,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
     }
   }
 
-  private[http] def cleanupUnseenFuncs(): Unit = {
+  def cleanupUnseenFuncs(): Unit = {
     if (LiftRules.enableLiftGC && stateful_?) {
       val now = millis
 
@@ -1117,7 +1145,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
             notices = Nil
             // Phase 3: Response conversion including fixHtml
             LiftRules.convertResponse((xml, overrideResponseCode.is openOr code),
-              S.getHeaders(LiftRules.defaultHeaders((xml, request))),
+              S.getResponseHeaders(LiftRules.defaultHeaders((xml, request))),
               S.responseCookies,
               request)
           }
@@ -1350,23 +1378,6 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
     }
   }
 
-  /*
-   * Given a Snippet name, try to determine the fully-qualified Class
-   * so that we can instantiate it via reflection.
-   */
-  private def findSnippetClass(name: String): Box[Class[AnyRef]] = {
-    if (name == null) Empty
-    else {
-      // Name might contain some relative packages, so split them out and put them in the proper argument of findClass
-      val (packageSuffix, terminal) = name.lastIndexOf('.') match {
-        case -1 => ("", name)
-        case i => ("." + name.substring(0, i), name.substring(i + 1))
-      }
-      findClass(terminal, LiftRules.buildPackage("snippet").map(_ + packageSuffix) :::
-        (("lift.app.snippet" + packageSuffix) :: ("net.liftweb.builtin.snippet" + packageSuffix) :: Nil))
-    }
-  }
-
   private def instantiateOrRedirect[T](c: Class[T]): Box[T] = {
     try {
       LiftSession.constructFrom(this,
@@ -1386,7 +1397,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
 
       first(LiftRules.snippetNamesToSearch.vend(cls)) {
         nameToTry =>
-          findSnippetClass(nameToTry) flatMap {
+          LiftSession.findSnippetClass(nameToTry) flatMap {
             clz =>
               instantiateOrRedirect(clz) flatMap {
                 inst =>
@@ -1479,7 +1490,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
    * See if there's a object singleton with the right name
    */
   private def findSnippetObject(cls: String): Box[AnyRef] =
-    findSnippetClass(cls + "$").flatMap {
+    LiftSession.findSnippetClass(cls + "$").flatMap {
       c =>
         tryo {
           val field = c.getField("MODULE$")
@@ -1501,7 +1512,7 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
   private def findSnippetInstance(cls: String): Box[AnyRef] =
     S.snippetForClass(cls) or
       (LiftRules.snippet(cls) or
-        findSnippetClass(cls).flatMap(c => instantiateOrRedirect(c) or findSnippetObject(cls))) match {
+        LiftSession.findSnippetClass(cls).flatMap(c => instantiateOrRedirect(c) or findSnippetObject(cls))) match {
       case Full(inst: StatefulSnippet) =>
         inst.addName(cls); S.overrideSnippetForClass(cls, inst); Full(inst)
       case Full(ret) => Full(ret)
@@ -1866,11 +1877,18 @@ class LiftSession(private[http] val _contextPath: String, val uniqueId: String,
             case x => x
           }
 
+        case Some("ajax") =>
+          net.liftweb.builtin.snippet.Form.render(ret) match {
+            case e: Elem => e % LiftRules.formAttrs.vend.foldLeft[MetaData](Null)((base, name) => checkAttr(name, attrs, base))
+            case x => x
+          }
+
         case Some(ft) =>
           <form action={S.uri} method={ft}>
             {ret}
           </form> %
             checkMultiPart(attrs) % LiftRules.formAttrs.vend.foldLeft[MetaData](Null)((base, name) => checkAttr(name, attrs, base))
+
         case _ => ret
       }
 

@@ -544,6 +544,7 @@ object Req {
   private def _fixHref(contextPath: String, v: Seq[Node], fixURL: Boolean, rewrite: Box[String => String]): Text = {
     val hv = v.text
     val updated = if (hv.startsWith("/") &&
+                      !hv.startsWith("//") &&
                       !LiftRules.excludePathFromContextPathRewriting.vend(hv)) contextPath + hv else hv
 
     Text(if (fixURL && rewrite.isDefined &&
@@ -551,6 +552,7 @@ object Req {
              !updated.startsWith("javascript:") &&
              !updated.startsWith("http://") &&
              !updated.startsWith("https://") &&
+             !updated.startsWith("//") &&
              !updated.startsWith("#"))
          rewrite.openOrThrowException("legacy code").apply(updated) else updated)
   }
@@ -1079,7 +1081,7 @@ class Req(val path: ParsePath,
       case NotFoundAsTemplate(path) => notFoundViaTemplate(path)
       case NotFoundAsResponse(resp) => resp
       case NotFoundAsNode(node) => LiftRules.convertResponse((node, 404),
-        S.getHeaders(LiftRules.defaultHeaders((node, this))),
+        S.getResponseHeaders(LiftRules.defaultHeaders((node, this))),
         S.responseCookies,
         this)
     }
@@ -1090,7 +1092,7 @@ class Req(val path: ParsePath,
       case NotFoundAsTemplate(path) => notFoundViaTemplate(path)
       case NotFoundAsResponse(resp) => resp
       case NotFoundAsNode(node) => LiftRules.convertResponse((node, 404),
-        S.getHeaders(LiftRules.defaultHeaders((node, this))),
+        S.getResponseHeaders(LiftRules.defaultHeaders((node, this))),
         S.responseCookies,
         this)
     }
@@ -1115,7 +1117,7 @@ class Req(val path: ParsePath,
           f(path)
          }
       case NotFoundAsNode(node) => Full(LiftRules.convertResponse((node, 404),
-        S.getHeaders(LiftRules.defaultHeaders((node, this))),
+        S.getResponseHeaders(LiftRules.defaultHeaders((node, this))),
         S.responseCookies,
         this))
     }

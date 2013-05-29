@@ -1482,17 +1482,30 @@ trait S extends HasParams with Loggable {
               rh.headers = rh.headers + (name -> value)
       )
   }
+  /**
+   * Synonym for S.setHeader. Exists to provide the converse to
+   * S.getResponseHeader.
+   */
+  def setResponseHeader(name: String, value: String) {
+    setHeader(name, value)
+  }
 
+
+  @deprecated("Use S.getResponseHeaders instead for clarity.", "2.5")
+  def getHeaders(in: List[(String, String)]): List[(String, String)] = {
+    getResponseHeaders(in)
+  }
   /**
    * Returns the currently set HTTP response headers as a List[(String, String)]. To retrieve
-   * a specific response header, use S.getHeader. If you want to get request headers (those
-   * sent by the client), use Req.getHeaders or S.getRequestHeader.
+   * a specific response header, use S.getResponseHeader. If you want to
+   * get request headers (those sent by the client), use Req.getHeaders
+   * or S.getRequestHeader.
    *
    * @see # setHeader ( String, String )
-   * @see # getHeader ( String )
+   * @see # getResponseHeader ( String )
    * @see # getRequestHeader ( String )
    */
-  def getHeaders(in: List[(String, String)]): List[(String, String)] = {
+  def getResponseHeaders(in: List[(String, String)]): List[(String, String)] = {
     Box.legacyNullTest(_responseHeaders.value).map(
       rh =>
               rh.headers.iterator.toList :::
@@ -1500,6 +1513,10 @@ trait S extends HasParams with Loggable {
       ).openOr(Nil)
   }
 
+  @deprecated("Use S.getResponseHeader instead for clarity.", "2.5")
+  def getHeader(name: String): Box[String] = {
+    getResponseHeader(name)
+  }
   /**
    * Returns the current set value of the given HTTP response header as a Box. If
    * you want a request header, use Req.getHeader or S.getRequestHeader.
@@ -1508,10 +1525,10 @@ trait S extends HasParams with Loggable {
    * @return A Full(value) or Empty if the header isn't set
    *
    * @see # setHeader ( String, String )
-   * @see # getHeaders ( List[ ( String, String ) ] )
+   * @see # getResponseHeaders ( List[ ( String, String ) ] )
    * @see # getRequestHeader ( String )
    */
-  def getHeader(name: String): Box[String] = {
+  def getResponseHeader(name: String): Box[String] = {
     Box.legacyNullTest(_responseHeaders.value).map(
       rh => Box(rh.headers.get(name))
       ).openOr(Empty)
@@ -2035,6 +2052,20 @@ trait S extends HasParams with Loggable {
      * for easy addition to the attributes
      */
     def ~(prefix: String, key: String): Option[NodeSeq] = apply(prefix, key).toOption.map(Text(_))
+  }
+
+  /**
+   * Sometimes, in the course of eager evaluation, it becomes necessary
+   * to clear attribtues so they do not polute the eagerly evaluated stuff.
+   * When you need to clear the attributes, wrap your code block in clearAttrs
+   * and have fun.
+   *
+   * @param f the call-by-name code block to run where the attributes are clear
+   * @tparam T the return type of the code block
+   * @return the return value of the code block
+   */
+  def clearAttrs[T](f: => T):T = {
+    _attrs.doWith((Null, Nil))(f)
   }
 
   /**
