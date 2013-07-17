@@ -35,6 +35,6 @@ scmInfo in ThisBuild               := Some(ScmInfo(url("https://github.com/lift/
 pomExtra in ThisBuild              ~= (_ ++ {Developers.toXml})
 
 //credentials in ThisBuild <+= state map { s => Credentials(BuildPaths.getGlobalSettingsDirectory(s, BuildPaths.getGlobalBase(s)) / ".credentials") }
-credentials in ThisBuild += Credentials(Path.userHome / ".ccap_artifactory_credentials")
+credentials in ThisBuild += Credentials(Path.userHome / ".ivy2" / ".credentials")
 
 initialize <<= (name, version, scalaVersion) apply printLogo
