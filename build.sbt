@@ -24,9 +24,9 @@ pomIncludeRepository in ThisBuild  := { _ => false }
 publishTo in ThisBuild <<= (version) { version: String =>
   val repo =
     if (version.trim.endsWith("SNAPSHOT"))
-      "CCAP Snapshots" at "http://artifactory.ci.wicourts.gov/libs-snapshots-local"
+      "CCAP Snapshots" at "http://repo.wicourts.gov/artifactory/libs-snapshot-local"
     else
-      "CCAP Releases" at "http://artifactory.ci.wicourts.gov/libs-releases-local"
+      "CCAP Releases" at "http://repo.wicourts.gov/artifactory/libs-release-local"
   Some(repo)
 }
 
