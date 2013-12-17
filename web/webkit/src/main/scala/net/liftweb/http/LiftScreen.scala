@@ -282,7 +282,7 @@ trait AbstractScreen extends Factory with Loggable {
         case FieldTransform(func) => func
       }).toList
 
-      val newShow: Box[() => Boolean] = (stuff.collect {
+      val newShow: Box[BaseField => Boolean] = (stuff.collect {
         case DisplayIf(func) => func
       }).headOption
 
@@ -321,7 +321,7 @@ trait AbstractScreen extends Factory with Loggable {
 
         override def transforms = newTransforms
 
-        override def show_? = newShow map (_()) openOr (super.show_?)
+        override def show_? = newShow map (_(this)) openOr (super.show_?)
       }
     }
   }
@@ -400,7 +400,7 @@ trait AbstractScreen extends Factory with Loggable {
 
   protected final case class FieldTransform(func: BaseField => NodeSeq => NodeSeq) extends FilterOrValidate[Nothing]
 
-  protected final case class DisplayIf(func: () => Boolean) extends FilterOrValidate[Nothing]
+  protected final case class DisplayIf(func: BaseField => Boolean) extends FilterOrValidate[Nothing]
 
   protected def field[T](underlying: => BaseField {type ValueType = T},
                          stuff: FilterOrValidate[T]*)(implicit man: Manifest[T]): Field {type ValueType = T} = {
@@ -427,7 +427,7 @@ trait AbstractScreen extends Factory with Loggable {
       case FieldTransform(func) => func
     }).toList
 
-    val newShow: Box[() => Boolean] = (stuff.collect {
+    val newShow: Box[BaseField => Boolean] = (stuff.collect {
       case DisplayIf(func) => func
     }).headOption
 
@@ -445,7 +445,7 @@ trait AbstractScreen extends Factory with Loggable {
       /**
        * Given the current state of things, should this field be shown
        */
-      override def show_? = newShow map (_()) openOr underlying.show_?
+      override def show_? = newShow map (_(this)) openOr underlying.show_?
 
       /**
        * What form elements are we going to add to this field?
@@ -521,7 +521,7 @@ trait AbstractScreen extends Factory with Loggable {
       case FieldTransform(func) => func
     }).toList
 
-    val newShow: Box[() => Boolean] = (stuff.collect {
+    val newShow: Box[BaseField => Boolean] = (stuff.collect {
       case DisplayIf(func) => func
     }).headOption
 
@@ -547,7 +547,7 @@ trait AbstractScreen extends Factory with Loggable {
       /**
        * Given the current state of things, should this field be shown
        */
-      override def show_? = newShow map (_()) openOr (underlying.map(_.show_?) openOr false)
+      override def show_? = newShow map (_(this)) openOr (underlying.map(_.show_?) openOr false)
 
       /**
        * What form elements are we going to add to this field?
@@ -725,7 +725,7 @@ trait AbstractScreen extends Factory with Loggable {
       case FieldTransform(func) => func
     }).toList
 
-    val newShow: Box[() => Boolean] = (stuff.collect {
+    val newShow: Box[BaseField => Boolean] = (stuff.collect {
       case DisplayIf(func) => func
     }).headOption
 
@@ -765,7 +765,7 @@ trait AbstractScreen extends Factory with Loggable {
 
           override def transforms = newTransforms
 
-          override def show_? = newShow map (_()) openOr (super.show_?)
+          override def show_? = newShow map (_(this)) openOr (super.show_?)
         }
       }
 
@@ -802,7 +802,7 @@ trait AbstractScreen extends Factory with Loggable {
 
           override def transforms = newTransforms
 
-          override def show_? = newShow map (_()) openOr (super.show_?)
+          override def show_? = newShow map (_(this)) openOr (super.show_?)
         }
       }
     }
