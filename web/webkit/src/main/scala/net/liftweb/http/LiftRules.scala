@@ -146,6 +146,11 @@ object LiftRules extends LiftRulesMocker {
     val ExecutionFailure = Value(11, "Execution Failure")
   }
 
+  def defaultFuncNameGenerator(runMode: Props.RunModes.Value): () => String =
+    runMode match {
+      case Props.RunModes.Test => S.generateTestFuncName _
+      case _                   => S.generateFuncName _
+    }
 }
 
 /**
@@ -493,6 +498,21 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
   @volatile var localizationLookupFailureNotice: Box[(String, Locale) => Unit] = Empty
 
   /**
+   * When a parameter is received either via POST or GET and does not have a
+   * corresponding mapping on the server, the function provided by this
+   * FactoryMaker will be called with the req and parameter name.
+   *
+   * By default, if the parameter looks Lift-like (i.e., it starts with an F),
+   * then we log a warning with the given parameter name and URI.
+   */
+  val handleUnmappedParameter = new FactoryMaker[(Req,String)=>Unit](
+    () => { (req: Req, parameterName: String) =>
+      if (parameterName.startsWith("F"))
+        logger.warn("Unmapped Lift-like parameter seen in request [%s]: %s".format(req.uri, parameterName))
+    }
+  ) {}
+
+  /**
    * Set to false if you want to have 404's handled the same way in dev and production mode
    */
   @volatile var displayHelpfulSiteMapMessages_? = true
@@ -748,7 +768,7 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
 
   /**
    * The function that calculates if the response should be rendered in
-   * IE6/7 compatibility mode
+   * IE6/7/8 compatibility mode
    */
   @volatile var calcIEMode: () => Boolean =
   () => (for (r <- S.request) yield r.isIE6 || r.isIE7 ||
@@ -954,7 +974,7 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
    * LiftRules.htmlProperties.default.set((r: Req) => new Html5Properties(r.userAgent))
    */
   val htmlProperties: FactoryMaker[Req => HtmlProperties] =
-    new FactoryMaker(() => (r: Req) => (new OldHtmlProperties(r.userAgent): HtmlProperties)) {}
+    new FactoryMaker(() => (r: Req) => new Html5Properties(r.userAgent): HtmlProperties) {}
 
   /**
    * How long should we wait for all the lazy snippets to render
@@ -1314,7 +1334,7 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
       val ret = XhtmlResponse(ns,
         /*LiftRules.docType.vend(req)*/S.htmlProperties.docType,
         headers, cookies, code,
-        S.ieMode)
+        S.legacyIeCompatibilityMode)
       ret._includeXmlVersion = !S.skipDocType
       ret
     }, headers, cookies, req)
@@ -1393,11 +1413,11 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
   val exceptionHandler = RulesSeq[ExceptionHandlerPF].append {
     case (Props.RunModes.Development, r, e) =>
       logger.error("Exception being returned to browser when processing " + r.uri.toString, e)
-      XhtmlResponse((<html> <body>Exception occured while processing {r.uri}<pre>{showException(e)}</pre> </body> </html>), S.htmlProperties.docType, List("Content-Type" -> "text/html; charset=utf-8"), Nil, 500, S.ieMode)
+      XhtmlResponse((<html> <body>Exception occured while processing {r.uri}<pre>{showException(e)}</pre> </body> </html>), S.htmlProperties.docType, List("Content-Type" -> "text/html; charset=utf-8"), Nil, 500, S.legacyIeCompatibilityMode)
 
     case (_, r, e) =>
       logger.error("Exception being returned to browser when processing " + r.uri.toString, e)
-      XhtmlResponse((<html> <body>Something unexpected happened while serving the page at {r.uri}</body> </html>), S.htmlProperties.docType, List("Content-Type" -> "text/html; charset=utf-8"), Nil, 500, S.ieMode)
+      XhtmlResponse((<html> <body>Something unexpected happened while serving the page at {r.uri}</body> </html>), S.htmlProperties.docType, List("Content-Type" -> "text/html; charset=utf-8"), Nil, 500, S.legacyIeCompatibilityMode)
   }
 
   /**
@@ -1535,7 +1555,12 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
 
   @volatile var cometGetTimeout = 140000
 
-  @volatile var supplimentalHeaders: HTTPResponse => Unit = s => s.addHeaders(List(HTTPParam("X-Lift-Version", liftVersion)))
+  /**
+   * Compute the headers to be sent to the browser in addition to anything else that's sent
+   */
+  val listOfSupplimentalHeaders: FactoryMaker[List[(String, String)]] = new FactoryMaker(() => List(("X-Lift-Version", liftVersion), ("X-Frame-Options", "SAMEORIGIN"))) {}
+
+  @volatile var supplimentalHeaders: HTTPResponse => Unit = s => listOfSupplimentalHeaders.vend.foreach{case (k, v) => s.addHeaders(List(HTTPParam(k, v)))}
 
   @volatile var calcIE6ForResponse: () => Boolean = () => S.request.map(_.isIE6) openOr false
 
@@ -1770,6 +1795,9 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
 
   /** Controls whether or not the service handling timing messages (Service request (GET) ... took ... Milliseconds) are logged. Defaults to true. */
   @volatile var logServiceRequestTiming = true
+
+  /** Provides a function that returns random names for form variables, page ids, callbacks, etc. */
+  @volatile var funcNameGenerator: () => String = defaultFuncNameGenerator(Props.mode)
 
   import provider.servlet._
   import containers._

@@ -41,11 +41,19 @@ trait FlexMenuBuilder {
    */
   protected def expandAny = false
 
-  // This is used to build a MenuItem for a single Loc
+  /**
+   * This is used to build a MenuItem for a single Loc
+   */
   protected def buildItemMenu[A](loc: Loc[A], currLoc: Box[Loc[_]], expandAll: Boolean): List[MenuItem] = {
+    val isInPath = currLoc.map { cur =>
+      def isInPath(loc: Loc[_]): Boolean = (cur == loc) || loc.menu.kids.exists(k => isInPath(k.loc))
+      isInPath(loc)
+    } openOr false
+
     val kids: List[MenuItem] = if (expandAll) loc.buildKidMenuItems(loc.menu.kids) else Nil
-    loc.asInstanceOf[StructBuildItem].buildItem(kids, currLoc == Full(loc), currLoc == Full(loc)).toList
+    loc.asInstanceOf[StructBuildItem].buildItem(kids, currLoc == Full(loc), isInPath).toList
   }
+
 
   /**
    * Compute the MenuItems to be rendered by looking at the 'item' and 'group' attributes

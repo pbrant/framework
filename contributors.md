@@ -168,3 +168,28 @@ Will Palmeri
 ### Email: ###
 wpalmeri at gmail dot com
 
+### Name: ###
+David Barri
+
+### Email: ###
+japgolly @@ gmail .. com
+
+### Name: ###
+Viktor Hedefalk
+
+### Email: ###
+hedefalk @@ gmail .. com
+
+### Name: ###
+Kenji Yoshida
+
+### Email: ###
+6b656e6a69 at gmail dot com
+
+### Name: ###
+Christopher Webster
+
+### Email: ###
+cwebster93 at gmail .. com
+
+

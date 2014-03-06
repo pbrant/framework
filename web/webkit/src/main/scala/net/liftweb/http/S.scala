@@ -258,7 +258,7 @@ object S extends S {
  * @see LiftSession
  * @see LiftFilter
  */
-trait S extends HasParams with Loggable {
+trait S extends HasParams with Loggable with UserAgentCalculator {
   import S._
 
   /*
@@ -396,6 +396,10 @@ trait S extends HasParams with Loggable {
     request flatMap { r => CurrentLocation(r.location) }
   }
 
+  /**
+   * The user agent of the current request, if any.
+  **/
+  def userAgent = request.flatMap(_.userAgent)
 
   /**
    * An exception was thrown during the processing of this request.
@@ -566,6 +570,9 @@ trait S extends HasParams with Loggable {
     LiftRules.timeZoneCalculator(containerRequest)
 
   /**
+   * A boolean indicating whether or not the response should be rendered with
+   * special accomodations for IE 6 / 7 / 8 compatibility.
+   *
    * @return <code>true</code> if this response should be rendered in
    * IE6/IE7 compatibility mode.
    *
@@ -576,7 +583,10 @@ trait S extends HasParams with Loggable {
    * @see Req.isIE8
    * @see Req.isIE
    */
-  def ieMode: Boolean = session.map(_.ieMode.is) openOr false // LiftRules.calcIEMode()
+  def legacyIeCompatibilityMode: Boolean = session.map(_.legacyIeCompatibilityMode.is) openOr false // LiftRules.calcIEMode()
+
+  @deprecated("Use legacyIeCompatibilityMode for legacy IE detection instead, or use S.isIE* for general IE detection. This will be removed in Lift 3.0.", "2.6")
+  def ieMode = legacyIeCompatibilityMode
 
   /**
    * Get the current instance of HtmlProperties
@@ -2590,7 +2600,17 @@ trait S extends HasParams with Loggable {
       f
     }
 
-  def formFuncName: String = if (Props.testMode && !disableTestFuncNames_?) {
+  def formFuncName: String = LiftRules.funcNameGenerator()
+
+  /** Default func-name logic during test-mode. */
+  def generateTestFuncName: String =
+    if (disableTestFuncNames_?)
+      generateFuncName
+    else
+      generatePredictableFuncName
+
+  /** Generates a func-name based on the location in the call-site source code. */
+  def generatePredictableFuncName: String = {
     val bump: Long = ((_formGroup.is openOr 0) + 1000L) * 100000L
     val num: Int = formItemNumber.is
     formItemNumber.set(num + 1)
@@ -2598,12 +2618,14 @@ trait S extends HasParams with Loggable {
     val prefix: String = new DecimalFormat("00000000000000000").format(bump + num)
     // take the first 2 non-Lift/non-Scala stack frames for use as hash issue 174
     "f" + prefix + "_" + Helpers.hashHex((new Exception).getStackTrace.toList.filter(notLiftOrScala).take(2).map(_.toString).mkString(","))
-  } else {
+  }
+
+  /** Standard func-name logic. This is the default routine. */
+  def generateFuncName: String =
     _formGroup.is match {
       case Full(x) => Helpers.nextFuncName(x.toLong * 100000L)
-      case _ => Helpers.nextFuncName
+      case       _ => Helpers.nextFuncName
     }
-  }
 
   def formGroup[T](group: Int)(f: => T): T = {
     val x = _formGroup.is

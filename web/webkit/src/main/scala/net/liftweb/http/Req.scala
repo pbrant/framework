@@ -33,7 +33,7 @@ object UserAgentCalculator extends Factory {
   /**
    * The default regular expression for IE
    */
-  val iePattern = """MSIE ([0-9]+)""".r
+  val iePattern = """(MSIE ([0-9]+)|Trident/7.*rv:([0-9]+))""".r
 
   /**
    * You can change the mechanism by which the user agent for IE
@@ -47,9 +47,11 @@ object UserAgentCalculator extends Factory {
    */
   def defaultIeCalcFunction(userAgent: Box[String]): Box[Double] = 
     for {
-      ua <- userAgent
-      m = iePattern.pattern.matcher(ua)
-      ver <- if (m.find) Helpers.asDouble(m.group(1)) else Empty
+      userAgent <- userAgent
+      ieMatch = iePattern.pattern.matcher(userAgent)
+      findResult = ieMatch.find if findResult
+      ieVersionString <- Box.legacyNullTest(ieMatch.group(2)) or Box.legacyNullTest(ieMatch.group(3))
+      ver <- Helpers.asDouble(ieVersionString)
     } yield ver
 
   /**
@@ -143,7 +145,9 @@ trait UserAgentCalculator {
   lazy val isIE7: Boolean = ieVersion.map(_ == 7) openOr false
   lazy val isIE8: Boolean = ieVersion.map(_ == 8) openOr false
   lazy val isIE9: Boolean = ieVersion.map(_ == 9) openOr false
-  lazy val isIE = ieVersion.map(_ >= 6) openOr false
+  lazy val ieIE10: Boolean = ieVersion.map(_ == 10) openOr false
+  lazy val isIE11: Boolean = ieVersion.map(_ == 11) openOr false
+  lazy val isIE = ieVersion.isDefined
 
   lazy val safariVersion: Box[Int] = 
     UserAgentCalculator.safariCalcFunction.vend.apply(userAgent).map(_.toInt)
@@ -589,7 +593,7 @@ object Req {
 
   private[liftweb] def defaultCreateNotFound(in: Req) =
   XhtmlResponse((<html> <body>The Requested URL {in.contextPath + in.uri} was not found on this server</body> </html>),
-                LiftRules.docType.vend(in), List("Content-Type" -> "text/html; charset=utf-8"), Nil, 404, S.ieMode)
+                LiftRules.docType.vend(in), List("Content-Type" -> "text/html; charset=utf-8"), Nil, 404, S.legacyIeCompatibilityMode)
 
   def unapply(in: Req): Option[(List[String], String, RequestType)] = Some((in.path.partPath, in.path.suffix, in.requestType))
 }
@@ -1122,11 +1126,13 @@ class Req(val path: ParsePath,
         this))
     }
   
-  def post_? = requestType.post_?
+  val post_? = requestType.post_?
 
-  def get_? = requestType.get_?
+  val get_? = requestType.get_?
 
-  def put_? = requestType.put_?
+  val put_? = requestType.put_?
+
+  val options_? = requestType.options_?
 
   def fixHtml(in: NodeSeq): NodeSeq = Req.fixHtml(contextPath, in)
 
