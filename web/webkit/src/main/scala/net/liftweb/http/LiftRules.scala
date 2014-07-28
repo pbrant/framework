@@ -1064,6 +1064,13 @@ class LiftRules() extends Factory with FormVendor with LazyLoggable {
   new FactoryMaker(() => ((s: String) => false)) {}
 
   /**
+   * Returning true from this function will exclude this template path from
+   * being automatically wrapped in a default surround template.
+   */
+  val excludePathFromDefaultAutoSurround: FactoryMaker[List[String] => Boolean] =
+    new FactoryMaker(() => ((parts: List[String]) => false)) {}
+
+  /**
    * If a deferred snippet has a failure during render,
    * what should we display?
    */
