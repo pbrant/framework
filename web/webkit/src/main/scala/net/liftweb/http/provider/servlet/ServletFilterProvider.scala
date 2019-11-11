@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package net.liftweb 
-package http 
-package provider 
-package servlet 
+package net.liftweb
+package http
+package provider
+package servlet
 
 import javax.servlet._
 import javax.servlet.http._
@@ -79,9 +79,14 @@ trait ServletFilterProvider extends Filter with HTTPProvider {
                 val httpRequest = new HTTPRequestServlet(httpReq, this)
                 val httpResponse = new HTTPResponseServlet(httpRes)
 
-                handleLoanWrappers(service(httpRequest, httpResponse) {
-                  chain.doFilter(req, res)
-                })
+                Logger.logWith(
+                  ("ccapSessionId", httpRequest.sessionId.openOr("NOSESSION")),
+                  ("ccapRequestCounter", CcapTrace.requestCounter.incrementAndGet())
+                ) {
+                  handleLoanWrappers(service(httpRequest, httpResponse) {
+                    chain.doFilter(req, res)
+                  })
+                }
               case _ => chain.doFilter(req, res)
             }))
       } finally {LiftRules.reqCnt.decrementAndGet()}
