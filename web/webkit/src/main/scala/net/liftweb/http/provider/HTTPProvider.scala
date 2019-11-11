@@ -65,11 +65,12 @@ trait HTTPProvider {
 
       CurrentReq.doWith(newReq) {
         URLRewriter.doWith(url =>
-          NamedPF.applyBox(resp.encodeUrl(url),
-            LiftRules.urlDecorate.toList) openOr
-            resp.encodeUrl(url)) {
+          NamedPF.applyBox(resp.encodeUrl(url), LiftRules.urlDecorate.toList) openOr resp.encodeUrl(url)
+        ) {
+          CcapTrace.logger.debug(s"Processing request with URL ${newReq.uri}")
           if (!(isLiftRequest_?(newReq) &&
             actualServlet.service(newReq, resp))) {
+            CcapTrace.logger.debug("Ignoring non-Lift request")
             chain
           }
         }

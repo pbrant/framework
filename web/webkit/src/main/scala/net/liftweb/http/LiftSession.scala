@@ -600,16 +600,19 @@ class LiftSession(private[http] val _contextPath: String, val underlyingId: Stri
           state.uploadedFiles.filter(_.name == i.name).map(_.fileName)))
     }
 
+    CcapTrace.logger.debug(s"Will run following functions ${toRun.map(_.name)}")
+
     val ret = toRun.map(_.owner).distinct.flatMap {
       w =>
         val f = toRun.filter(_.owner == w)
         w match {
           // if it's going to a CometActor, batch up the commands
-          case Full(id) if nasyncById.containsKey(id) => Option(nasyncById.get(id)).toList.flatMap(a =>
+          case Full(id) if nasyncById.containsKey(id) => Option(nasyncById.get(id)).toList.flatMap{a =>
+            CcapTrace.logger.debug(s"$id references Comet actor, will send ${f.map(_.name)} to actor")
             a.!?(ActionMessageSet(f.map(i => buildFunc(i)), state)) match {
               case li: List[_] => li
               case other => Nil
-            })
+            }}
           case _ => f.map(i => buildFunc(i).apply())
         }
     }

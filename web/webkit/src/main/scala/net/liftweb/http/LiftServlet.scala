@@ -258,14 +258,17 @@ class LiftServlet extends Loggable {
       }
 
       val role = NamedPF.applyBox(req, LiftRules.httpAuthProtectedResource.toList)
-      role.map(_ match {
-        case Full(r) =>
-          LiftRules.authentication.verified_?(req) match {
-            case true => checkRoles(r, userRoles.get)
-            case _ => false
-          }
-        case _ => LiftRules.authentication.verified_?(req)
-      }) openOr true
+      val result =
+        role.map(_ match {
+          case Full(r) =>
+            LiftRules.authentication.verified_?(req) match {
+              case true => checkRoles(r, userRoles.get)
+              case _ => false
+            }
+          case _ => LiftRules.authentication.verified_?(req)
+        }) openOr true
+      CcapTrace.logger.debug(s"authPassed_? returning $result")
+      result
     }
 
     def process(req: Req) =
@@ -284,6 +287,8 @@ class LiftServlet extends Loggable {
 
       if (LiftRules.redirectAsyncOnSessionLoss && !sessionExists_?(sessionIdCalc.id) && (isComet || isAjax)) {
         val theId = sessionIdCalc.id
+
+        CcapTrace.logger.debug(s"Session has been lost (isComet = $isComet, isAjax = $isAjax, recentlyChecked = ${recentlyChecked(theId)})")
 
         // okay after 2 attempts to redirect, just ignore calls to the
         // async URL
@@ -379,6 +384,7 @@ class LiftServlet extends Loggable {
       val liftSession = getLiftSession(req)
 
       def doSession(r2: Req, s2: LiftSession, continue: Box[() => Nothing]): () => Box[LiftResponse] = {
+        CcapTrace.logger.debug("Processing stateful response")
         try {
           S.init(Box !! r2, s2) {
             dispatchStatefulRequest(S.request.openOrThrowException("I'm pretty sure this is a full box here"), liftSession, r2, continue)
@@ -424,6 +430,7 @@ class LiftServlet extends Loggable {
 
     def stepThroughPipeline(steps: Seq[ProcessingStep]): Box[LiftResponse] = {
       //Seems broken but last step always hits
+      CcapTrace.logger.debug(s"Processing pipeline step ${steps.head.getClass.getSimpleName}")
       steps.head.process(req) match {
         case Empty => stepThroughPipeline(steps.tail)
         case a@_   => a
@@ -468,11 +475,13 @@ class LiftServlet extends Loggable {
           LiftSession.onBeginServicing.foreach(_(liftSession, req))
           val ret: (Boolean, Box[LiftResponse]) =
             try {
+              CcapTrace.logger.debug("Matched dispath table")
               try {
                 // run the continuation in the new session
                 // if there is a continuation
                 continuation match {
                   case Full(func) => {
+                    CcapTrace.logger.debug("Calling continuation")
                     func()
                     S.redirectTo("/")
                   }
@@ -483,21 +492,27 @@ class LiftServlet extends Loggable {
                 S.functionLifespan(true) {
                   pf(toMatch)() match {
                     case Full(v) =>
+                      CcapTrace.logger.debug("Returning response")
                       (true, Full(LiftRules.convertResponse((liftSession.checkRedirect(v), Nil,
                         S.responseCookies, req))))
 
                     case Empty =>
+                      CcapTrace.logger.debug("Returning not found")
                       (true, LiftRules.notFoundOrIgnore(req, Full(liftSession)))
 
                     case f: net.liftweb.common.Failure =>
+                      CcapTrace.logger.debug(s"Request failed with $f")
                       (true, net.liftweb.common.Full(liftSession.checkRedirect(req.createNotFound(f))))
                   }
                 }
               } catch {
                 case ite: java.lang.reflect.InvocationTargetException if (ite.getCause.isInstanceOf[ResponseShortcutException]) =>
+                  CcapTrace.logger.debug("Redireting request (1)")
                   (true, Full(liftSession.handleRedirect(ite.getCause.asInstanceOf[ResponseShortcutException], req)))
 
-                case rd: net.liftweb.http.ResponseShortcutException => (true, Full(liftSession.handleRedirect(rd, req)))
+                case rd: net.liftweb.http.ResponseShortcutException =>
+                  CcapTrace.logger.debug("Redireting request (2)")
+                  (true, Full(liftSession.handleRedirect(rd, req)))
               }
             } finally {
               if (S.functionMap.size > 0) {
@@ -532,13 +547,16 @@ class LiftServlet extends Loggable {
       if (dispatch._1) {
         respToFunc(dispatch._2)
       } else if (comet_?) {
+        CcapTrace.logger.debug("Handling Comet request")
         handleComet(req, liftSession, originalRequest) match {
           case Left(x) => respToFunc(x)
           case Right(x) => x
         }
       } else if (ajax_?) {
+        CcapTrace.logger.debug("Handling AJAX request")
         respToFunc(handleAjax(liftSession, req))
       } else {
+        CcapTrace.logger.debug("Handling request with default handler")
         respToFunc(liftSession.processRequest(req, continuation))
       }
 
@@ -641,6 +659,15 @@ class LiftServlet extends Loggable {
               case _ => JsCommands(S.noticesToJsCmd :: JsCmds.Noop :: Nil).toResponse
             }
 
+            if (CcapTrace.logger.isDebugEnabled) {
+              val s = ret.toString
+              val shortened =
+                if (s.length < 300)
+                  s
+                else
+                  s.substring(0, 300) + "[...]"
+              CcapTrace.logger.debug("AJAX call returned " + shortened)
+            }
             LiftRules.cometLogger.debug("AJAX Response: " + liftSession.underlyingId + " " + ret)
 
             Full(ret)
@@ -677,6 +704,8 @@ class LiftServlet extends Loggable {
         LiftSession.onBeginServicing.foreach(_(liftSession, requestState))
       }
 
+      CcapTrace.logger.debug("  versionInfo = " + versionInfo)
+
       // Here, a Left[LAFuture] indicates a future that needs to be
       // *satisfied*, meaning we will run the request processing.
       // A Right[LAFuture] indicates a future we need to *wait* on,
@@ -686,6 +715,9 @@ class LiftServlet extends Loggable {
         versionInfo match {
           case Full(AjaxVersionInfo(_, handlerVersion, pendingRequests)) =>
             val renderVersion = RenderVersion.get
+
+            CcapTrace.logger.debug("  renderVersion = " + renderVersion)
+            CcapTrace.logger.debug("  handlerVersion = " + handlerVersion)
 
             liftSession.withAjaxRequests { currentAjaxRequests =>
               // Create a new future, put it in the request list, and return
@@ -716,11 +748,14 @@ class LiftServlet extends Loggable {
                     (entry, Left(entry.responseFuture))
                   }
 
+              CcapTrace.logger.debug(s"AJAX result is ${result.getClass.getSimpleName}")
+
               // If there are no other pending requests, we can
               // invalidate all the render version's AJAX entries except
               // for the current one, as the client is no longer looking
               // to retry any of them.
               if (pendingRequests == 0) {
+                CcapTrace.logger.debug("No pending requests")
                 // Satisfy anyone waiting on futures for invalid
                 // requests with a failure.
                 for {
