@@ -14,17 +14,20 @@ libraryDependencies in ThisBuild ++= Seq(specs2, specs2Matchers, specs2Mock, sca
 
 // Settings for Sonatype compliance
 pomIncludeRepository in ThisBuild := { _ => false }
-publishTo in ThisBuild := {
-  if (isSnapshot.value) {
-    Some(Opts.resolver.sonatypeSnapshots)
-  } else {
-    Some(Opts.resolver.sonatypeStaging)
-  }
+publishTo in ThisBuild <<= (version) { version: String =>
+  val repo =
+    if (version.trim.endsWith("SNAPSHOT"))
+      "CCAP Snapshots" at "http://repo.wicourts.gov/artifactory/libs-snapshot-local"
+    else
+      "CCAP Releases" at "http://repo.wicourts.gov/artifactory/libs-release-local"
+  Some(repo)
 }
+
 scmInfo in ThisBuild   := Some(ScmInfo(url("https://github.com/lift/framework"), "scm:git:https://github.com/lift/framework.git"))
 pomExtra in ThisBuild  := Developers.toXml
 
 credentials in ThisBuild += Credentials(BuildPaths.getGlobalSettingsDirectory(state.value, BuildPaths.getGlobalBase(state.value)) / ".credentials")
+credentials in ThisBuild += Credentials(Path.userHome / ".ivy2" / ".credentials")
 
 initialize := {
   printLogo(name.value, version.value, scalaVersion.value)
