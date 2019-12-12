@@ -68,6 +68,7 @@ case class SessionToServletBridge(uniqueId: String) extends HttpSessionBindingLi
    * When the session is unbound the the HTTP session, stop us
    */
   def valueUnbound(event: HttpSessionBindingEvent) {
+    CcapTrace.logger.debug(s"valueUnbound called with name ${event.getName}, will now remove session with ID $uniqueId")
     SessionMaster.sendMsg(RemoveSession(uniqueId))
   }
 

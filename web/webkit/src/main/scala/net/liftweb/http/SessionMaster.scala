@@ -62,6 +62,7 @@ object SessionMaster extends LiftActor with Loggable {
 
       for ((id, info@SessionInfo(session, _, _, _, _)) <- ses.iterator) {
         if (now - session.lastServiceTime > session.inactivityLength || session.markedForTermination) {
+          CcapTrace.logger.debug(s"Session $id expired (markedForTermination = ${session.markedForTermination} / inactivityLength = ${session.inactivityLength} / lastServiceTime = ${session.lastServiceTime}")
           logger.info(" Session " + id + " expired")
           destroyer(info)
         } else {
@@ -108,6 +109,8 @@ object SessionMaster extends LiftActor with Loggable {
   def getSession(id: String, otherId: Box[String]): Box[LiftSession] = lockAndBump {
     val dead = killedSessions.containsKey(id) || (otherId.map(killedSessions.containsKey(_)) openOr false)
 
+    CcapTrace.logger.debug(s"dead check in getSession for $id / $otherId is $dead")
+
     if (dead) (Failure("Dead session", Empty, Empty)) else {
     otherId.flatMap(a => Box !! nsessions.get(a)) or (Box !! nsessions.get(id))
     }
@@ -142,6 +145,11 @@ object SessionMaster extends LiftActor with Loggable {
   private def lockAndBump(f: => Box[SessionInfo]): Box[LiftSession] = this.synchronized {
     f.map {
       s =>
+        if (! nsessions.contains(s.session.underlyingId)) {
+          CcapTrace.logger.debug(s"Creating Lift session with ID ${s.session.underlyingId}")
+        } else {
+          CcapTrace.logger.debug(s"Updating Lift session with ID ${s.session.underlyingId}")
+        }
         nsessions.put(s.session.underlyingId, SessionInfo(s.session, s.userAgent, s.ipAddress, s.requestCnt + 1, millis))
 
         s.session
@@ -161,6 +169,7 @@ object SessionMaster extends LiftActor with Loggable {
    */
   def addSession(liftSession: LiftSession, req: Req,
                  userAgent: Box[String], ipAddress: Box[String]) {
+    CcapTrace.logger.debug(s"addSession called for session ID ${liftSession.underlyingId}")
     lockAndBump {
       Full(SessionInfo(liftSession, userAgent, ipAddress, -1, 0L)) // bumped twice during session creation.  Ticket #529 DPP
     }
@@ -204,6 +213,7 @@ object SessionMaster extends LiftActor with Loggable {
       val ses = lockRead(nsessions)
       (Box !! ses.get(sessionId)).foreach {
         case SessionInfo(s, _, _, _, _) =>
+          CcapTrace.logger.debug(s"Marking Lift session ${s.underlyingId} as dead")
           killedSessions.put(s.underlyingId, Helpers.millis)
           s.markedForShutDown_? = true
           Schedule.schedule(() => {

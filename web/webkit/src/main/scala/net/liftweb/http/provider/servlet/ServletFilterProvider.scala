@@ -81,6 +81,7 @@ trait ServletFilterProvider extends Filter with HTTPProvider {
 
                 Logger.logWith(
                   ("ccapSessionId", httpRequest.sessionId.openOr("NOSESSION")),
+                  ("ccapRequestedSessionId", httpReq.getRequestedSessionId()),
                   ("ccapRequestCounter", CcapTrace.requestCounter.incrementAndGet())
                 ) {
                   handleLoanWrappers(service(httpRequest, httpResponse) {
