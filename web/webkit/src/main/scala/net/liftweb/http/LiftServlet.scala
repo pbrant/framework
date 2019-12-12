@@ -203,22 +203,6 @@ class LiftServlet extends Loggable {
     }) openOr true
   }
 
-  private val recent: LRUMap[String, Int] = new LRUMap(2000)
-
-  private def registerRecentlyChecked(id: String): Unit =
-    synchronized {
-      val next = recent.get(id) match {
-        case Full(x) => x + 1
-        case _ => 1
-      }
-
-      recent(id) = next
-    }
-
-  private def recentlyChecked(id: Box[String]): Int = synchronized {
-    id.flatMap(recent.get).openOr(0)
-  }
-
   trait ProcessingStep {
     def process(req: Req): Box[LiftResponse]
 
@@ -280,12 +264,28 @@ class LiftServlet extends Loggable {
   }
 
   object SessionLossCheck extends ProcessingStep {
+    private val recent: LRUMap[String, Int] = new LRUMap(2000)
+
+    private def registerRecentlyChecked(id: String): Unit =
+      synchronized {
+        val next = recent.get(id) match {
+          case Full(x) => x + 1
+          case _ => 1
+        }
+
+        recent(id) = next
+      }
+
+    private def recentlyChecked(id: Box[String]): Int = synchronized {
+      id.flatMap(recent.get).openOr(0)
+    }
 
     def process(req: Req): Box[LiftResponse] = {
       val (isComet, isAjax) = cometOrAjax_?(req)
       val sessionIdCalc = new SessionIdCalc(req)
 
       if (LiftRules.redirectAsyncOnSessionLoss && !sessionExists_?(sessionIdCalc.id) && (isComet || isAjax)) {
+        sessionIdCalc.id.foreach(registerRecentlyChecked)
         val theId = sessionIdCalc.id
 
         CcapTrace.logger.debug(s"Session has been lost (ID = ${sessionIdCalc.id}, isComet = $isComet, isAjax = $isAjax, recentlyChecked = ${recentlyChecked(theId)})")
@@ -308,20 +308,10 @@ class LiftServlet extends Loggable {
       }
     }
 
-    def reqHasSession(req: Req): Boolean = {
-      val sessionIdCalc = new SessionIdCalc(req)
-      !sessionExists_?(sessionIdCalc.id)
-    }
+    private def sessionExists_?(idb: Box[String]): Boolean =
+      idb.flatMap(id => SessionMaster.getSession(id, Empty)).isDefined
 
-    def sessionExists_?(idb: Box[String]): Boolean = {
-      idb.flatMap {
-        id =>
-          registerRecentlyChecked(id)
-          SessionMaster.getSession(id, Empty)
-      }.isDefined
-    }
-
-    def cometOrAjax_?(req: Req): (Boolean, Boolean) = {
+    private [http] def cometOrAjax_?(req: Req): (Boolean, Boolean) = {
       lazy val ajaxPath = LiftRules.liftContextRelativePath :: "ajax" :: Nil
       lazy val cometPath = LiftRules.liftContextRelativePath :: "comet" :: Nil
 
