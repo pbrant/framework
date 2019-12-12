@@ -288,7 +288,7 @@ class LiftServlet extends Loggable {
       if (LiftRules.redirectAsyncOnSessionLoss && !sessionExists_?(sessionIdCalc.id) && (isComet || isAjax)) {
         val theId = sessionIdCalc.id
 
-        CcapTrace.logger.debug(s"Session has been lost (isComet = $isComet, isAjax = $isAjax, recentlyChecked = ${recentlyChecked(theId)})")
+        CcapTrace.logger.debug(s"Session has been lost (ID = ${sessionIdCalc.id}, isComet = $isComet, isAjax = $isAjax, recentlyChecked = ${recentlyChecked(theId)})")
 
         // okay after 2 attempts to redirect, just ignore calls to the
         // async URL
@@ -507,11 +507,11 @@ class LiftServlet extends Loggable {
                 }
               } catch {
                 case ite: java.lang.reflect.InvocationTargetException if (ite.getCause.isInstanceOf[ResponseShortcutException]) =>
-                  CcapTrace.logger.debug("Redireting request (1)")
+                  CcapTrace.logger.debug("Redirecting request (1)")
                   (true, Full(liftSession.handleRedirect(ite.getCause.asInstanceOf[ResponseShortcutException], req)))
 
                 case rd: net.liftweb.http.ResponseShortcutException =>
-                  CcapTrace.logger.debug("Redireting request (2)")
+                  CcapTrace.logger.debug("Redirecting request (2)")
                   (true, Full(liftSession.handleRedirect(rd, req)))
               }
             } finally {

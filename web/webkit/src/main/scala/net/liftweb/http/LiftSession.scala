@@ -489,6 +489,8 @@ class LiftSession(private[http] val _contextPath: String, val underlyingId: Stri
     lastServiceTime = millis
     LiftSession.onSetupSession.foreach(_(this))
     sessionHtmlProperties // cause the properties to be calculated
+
+    CcapTrace.logger.debug(s"Starting Lift session with underlyingId = ${underlyingId}, container inactivity time = ${httpSession.map(_.maxInactiveInterval * 1000L)}, inactivityLength = ${inactivityLength}")
   }
 
   def running_? = _running_?
