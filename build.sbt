@@ -2,7 +2,7 @@ import Dependencies._
 import LiftSbtHelpers._
 
 organization in ThisBuild          := "net.liftweb"
-version in ThisBuild               := "3.3.0-ccap1"
+version in ThisBuild               := "3.3.0-ccap3"
 homepage in ThisBuild              := Some(url("http://www.liftweb.net"))
 licenses in ThisBuild              += ("Apache License, Version 2.0", url("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 startYear in ThisBuild             := Some(2006)
@@ -17,9 +17,9 @@ pomIncludeRepository in ThisBuild := { _ => false }
 publishTo in ThisBuild <<= (version) { version: String =>
   val repo =
     if (version.trim.endsWith("SNAPSHOT"))
-      "CCAP Snapshots" at "http://repo.wicourts.gov/artifactory/libs-snapshot-local"
+      "CCAP Snapshots" at "http://repoman.wicourts.gov/artifactory/libs-snapshot-local"
     else
-      "CCAP Releases" at "http://repo.wicourts.gov/artifactory/libs-release-local"
+      "CCAP Releases" at "http://repoman.wicourts.gov/artifactory/libs-release-local"
   Some(repo)
 }
 
