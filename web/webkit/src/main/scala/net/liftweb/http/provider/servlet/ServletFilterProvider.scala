@@ -80,8 +80,8 @@ trait ServletFilterProvider extends Filter with HTTPProvider {
                 val httpResponse = new HTTPResponseServlet(httpRes)
 
                 Logger.logWith(
-                  ("ccapSessionId", httpRequest.sessionId.openOr("NOSESSION")),
-                  ("ccapRequestedSessionId", httpReq.getRequestedSessionId()),
+                  ("ccapSessionId", httpRequest.sessionId.openOr("NONE")),
+                  ("ccapRequestedSessionId", Option(httpReq.getRequestedSessionId()).getOrElse("NONE")),
                   ("ccapRequestCounter", CcapTrace.requestCounter.incrementAndGet())
                 ) {
                   handleLoanWrappers(service(httpRequest, httpResponse) {

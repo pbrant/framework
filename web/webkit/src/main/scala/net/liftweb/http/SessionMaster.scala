@@ -145,7 +145,7 @@ object SessionMaster extends LiftActor with Loggable {
   private def lockAndBump(f: => Box[SessionInfo]): Box[LiftSession] = this.synchronized {
     f.map {
       s =>
-        if (! nsessions.contains(s.session.underlyingId)) {
+        if (! nsessions.containsKey(s.session.underlyingId)) {
           CcapTrace.logger.debug(s"Creating Lift session with ID ${s.session.underlyingId}")
         } else {
           CcapTrace.logger.debug(s"Updating Lift session with ID ${s.session.underlyingId}")
