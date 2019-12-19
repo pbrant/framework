@@ -732,6 +732,7 @@ class LiftSession(private[http] val _contextPath: String, val underlyingId: Stri
   }
 
   private[http] def doShutDown() {
+    CcapTrace.logger.trace(s"doShutDown called with running_? = ${running_?}")
     if (running_?) {
       // only deal with comet on stateful sessions
       // stateless temporary sessions bar comet use
@@ -939,8 +940,10 @@ class LiftSession(private[http] val _contextPath: String, val underlyingId: Stri
     var done: List[() => Unit] = Nil
 
     S.initIfUninitted(this) {
+      CcapTrace.logger.debug(s"Shutting down session ${this.uniqueId}")
       onSessionEnd.foreach(_(this))
       this.synchronized {
+        CcapTrace.logger.debug(s"Calling onAboutToShutdownSession for ${this.uniqueId}")
         LiftSession.onAboutToShutdownSession.foreach(_(this))
 
         _running_? = false
@@ -952,10 +955,12 @@ class LiftSession(private[http] val _contextPath: String, val underlyingId: Stri
           case (_, comp) => done ::= (() => tryo(comp ! ShutDown))
         }
         cleanUpSession()
+        CcapTrace.logger.debug(s"Calling onShutdownSession for ${this.uniqueId} with ${LiftSession.onShutdownSession}")
         LiftSession.onShutdownSession.foreach(f => done ::= (() => f(this)))
       }
     }
 
+    CcapTrace.logger.debug("Calling shutdown functions")
     done.foreach(_.apply())
   }
 
