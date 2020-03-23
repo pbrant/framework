@@ -1423,7 +1423,7 @@ private[http] class XmlOrJsCmd(val id: String,
         case _ => JsCmds.Noop
       }
     val fullUpdateJs =
-      LiftRules.cometUpdateExceptionHandler.vend.foldLeft(updateJs) { (commands, catchHandler) =>
+      LiftRules.cometUpdateExceptionHandler.vend.foldLeft(JsCmds.Run(updateJs.toJsCmd)) { (commands, catchHandler) =>
         JsCmds.Run(
           "try{" +
             commands.toJsCmd +
