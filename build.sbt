@@ -2,12 +2,12 @@ import Dependencies._
 import LiftSbtHelpers._
 
 organization in ThisBuild          := "net.liftweb"
-version in ThisBuild               := "3.3.0-ccap3"
+version in ThisBuild               := "3.3.0-ccap4"
 homepage in ThisBuild              := Some(url("http://www.liftweb.net"))
 licenses in ThisBuild              += ("Apache License, Version 2.0", url("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 startYear in ThisBuild             := Some(2006)
 organizationName in ThisBuild      := "WorldWide Conferencing, LLC"
-scalaVersion in ThisBuild          := "2.12.6"
+scalaVersion in ThisBuild          := "2.12.11"
 crossScalaVersions in ThisBuild    := Seq("2.12.6", "2.11.11")
 
 libraryDependencies in ThisBuild ++= Seq(specs2, specs2Matchers, specs2Mock, scalacheck, scalatest)
